@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Column Writer — AIコラム執筆アシスタント</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans JP','Hiragino Sans',sans-serif;background:#faf8f5;color:#3d3225;min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,textarea{font-family:inherit;outline:none}
+input:focus,textarea:focus{border-color:#c8b89a!important}
+button:active{transform:scale(0.98)}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-thumb{background:#d0c8b8;border-radius:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+.loading-spinner{width:32px;height:32px;border:3px solid #e8e4de;border-top-color:#8b7355;border-radius:50%;animation:spin .8s linear infinite}
+.loading-text{color:#8a8a8a;margin-top:16px;font-family:'Noto Serif JP',serif;font-size:14px}
+
+.error-screen{display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#faf8f5,#f0ede8)}
+.error-card{background:#fff;border-radius:16px;padding:48px 40px;width:480px;max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.06);text-align:center}
+.error-icon{font-size:48px;margin-bottom:16px}
+.error-title{font-size:18px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif;margin-bottom:8px}
+.error-desc{font-size:13px;color:#8a8070;line-height:1.7}
+.error-code{margin-top:16px;padding:12px 16px;background:#fef2f2;border-radius:8px;font-size:12px;color:#b91c1c;font-family:monospace;text-align:left;word-break:break-all}
+
+.login-container{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#faf8f5 0%,#f0ede8 50%,#e8e2d8 100%)}
+.login-card{background:#fff;border-radius:16px;padding:48px 40px;width:420px;max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.06)}
+.login-header{text-align:center;margin-bottom:36px}
+.logo-mark{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#3d3225,#6b5a42);color:#f0e8d8;display:inline-flex;align-items:center;justify-content:center;font-size:24px;font-family:'Noto Serif JP',serif;margin-bottom:16px}
+.login-title{font-size:22px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif;margin-bottom:4px}
+.login-subtitle{font-size:13px;color:#8a8070}
+.login-label{font-size:12px;color:#8a8070;margin-bottom:10px;font-weight:600;letter-spacing:.05em}
+.user-btn{display:flex;align-items:center;width:100%;padding:12px 16px;background:0 0;border:1px solid #e8e4de;border-radius:10px;font-size:14px;color:#3d3225;margin-bottom:8px;transition:background .15s}
+.user-btn:hover{background:#f0ede8}
+.user-btn svg{margin-right:10px;flex-shrink:0}
+.new-account-btn{color:#8b7355;font-size:13px;padding:8px 0;font-weight:500}
+.login-row{display:flex;gap:8px}
+.login-input{flex:1;padding:10px 14px;border:1px solid #e0dcd6;border-radius:8px;font-size:14px;transition:border-color .2s}
+.login-submit{padding:10px 24px;background:#3d3225;color:#fff;border-radius:8px;font-size:14px;font-weight:600}
+.login-submit:hover{background:#5a4832}
+.back-btn-small{color:#8b7355;font-size:13px;margin-top:8px}
+.login-error{margin-top:8px;padding:10px 14px;background:#fef2f2;color:#b91c1c;border-radius:8px;font-size:13px}
+.login-footer{margin-top:28px;padding-top:20px;border-top:1px solid #f0ede8;text-align:center}
+.admin-link{color:#b0a898;font-size:12px;transition:color .15s}
+.admin-link:hover{color:#6b5a42}
+
+/* Admin Panel */
+.admin-card{background:#fff;border-radius:16px;padding:48px 40px;width:500px;max-width:92vw;box-shadow:0 4px 24px rgba(0,0,0,.06)}
+.admin-header{text-align:center;margin-bottom:28px}
+.admin-badge{display:inline-block;padding:4px 12px;background:#f5f0e8;color:#6b5a42;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:12px}
+.admin-title{font-size:20px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif}
+.admin-section{margin-bottom:24px}
+.admin-section-title{font-size:13px;font-weight:600;color:#3d3225;margin-bottom:6px}
+.admin-hint{font-size:11px;color:#a09888;margin-bottom:8px;line-height:1.5}
+.admin-input{width:100%;padding:10px 14px;border:1px solid #e0dcd6;border-radius:8px;font-size:13px;margin-bottom:4px;transition:border-color .2s}
+.admin-input.mono{font-family:'SF Mono',Consolas,monospace;font-size:12px}
+.admin-save{width:100%;padding:12px;background:#3d6b35;color:#fff;border-radius:10px;font-size:14px;font-weight:600;margin-top:8px}
+.admin-save:hover{background:#4a8040}
+.admin-save:disabled{opacity:.45;cursor:not-allowed}
+.admin-msg{margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px}
+.admin-msg.ok{background:#ecfdf5;color:#065f46}
+.admin-msg.err{background:#fef2f2;color:#b91c1c}
+.admin-status{display:flex;align-items:center;gap:6px;font-size:12px;color:#8a8070;margin-bottom:16px;padding:10px 14px;background:#faf8f5;border-radius:8px}
+.admin-status .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.admin-status .dot.on{background:#22c55e}
+.admin-status .dot.off{background:#ef4444}
+
+.app-container{display:flex;min-height:100vh}
+.sidebar{width:240px;background:#2d2518;color:#d4c8b0;display:flex;flex-direction:column;justify-content:space-between;position:fixed;top:0;left:0;bottom:0;z-index:10;padding:20px 0}
+.sidebar-logo{display:flex;align-items:center;padding:0 20px;margin-bottom:28px}
+.logo-mark-sm{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#6b5a42,#8b7355);color:#f0e8d8;display:flex;align-items:center;justify-content:center;font-size:16px;font-family:'Noto Serif JP',serif}
+.sidebar-title{margin-left:10px;font-size:15px;font-weight:700;color:#f0e8d8;font-family:'Noto Serif JP',serif}
+.nav-section{display:flex;flex-direction:column;gap:2px;padding:0 8px}
+.nav-item{display:flex;align-items:center;padding:10px 12px;border-radius:8px;color:#bfb49e;font-size:13px;text-align:left;width:100%;transition:all .15s}
+.nav-item:hover{background:rgba(255,255,255,.06)}
+.nav-item.active{background:rgba(255,255,255,.1);color:#f0e8d8}
+.nav-item svg{margin-right:10px;flex-shrink:0}
+.nav-badge{margin-left:auto;background:#c8956a;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:2px 7px}
+.sidebar-footer{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid rgba(255,255,255,.08)}
+.user-info{display:flex;align-items:center;color:#bfb49e;font-size:13px;overflow:hidden}
+.user-info svg{margin-right:8px;flex-shrink:0}
+.user-info-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logout-btn{color:#8a7a64;padding:6px;border-radius:6px;flex-shrink:0}
+.logout-btn:hover{color:#f0e8d8}
+
+.main-content{margin-left:240px;flex:1;min-height:100vh}
+.view-container{padding:36px 48px;max-width:860px;margin:0 auto;animation:fadeIn .3s ease}
+.view-title{font-size:22px;font-weight:700;color:#2d2518;margin-bottom:6px;font-family:'Noto Serif JP',serif}
+.view-desc{font-size:13px;color:#8a8070;margin-bottom:28px}
+
+.write-card{background:#fff;border-radius:14px;padding:28px;border:1px solid #e8e4de}
+.info-bar{display:flex;gap:20px;margin-bottom:20px;font-size:13px;color:#8a8070;padding:10px 16px;background:#faf8f5;border-radius:8px;flex-wrap:wrap}
+.info-bar strong{color:#5a4832}
+.field-label{display:block;font-size:14px;font-weight:600;color:#3d3225;margin-bottom:6px}
+.field-hint{font-size:12px;color:#a09888;margin-bottom:12px;line-height:1.6}
+.prompt-textarea{width:100%;padding:16px;border:1px solid #e0dcd6;border-radius:10px;font-size:14px;line-height:1.8;resize:vertical;background:#fdfcfa;transition:border-color .2s}
+.prompt-footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+.char-indicator{font-size:12px;color:#a09888}
+.generate-btn{display:flex;align-items:center;gap:6px;padding:11px 28px;background:linear-gradient(135deg,#3d3225,#5a4832);color:#fff;border-radius:10px;font-size:14px;font-weight:600;transition:all .2s}
+.generate-btn:disabled{opacity:.45;cursor:not-allowed}
+.generate-btn:not(:disabled):hover{box-shadow:0 4px 12px rgba(61,50,37,.3)}
+.mini-spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+.error-msg{margin-top:12px;padding:10px 14px;background:#fef2f2;color:#b91c1c;border-radius:8px;font-size:13px}
+
+.result-card{background:#fff;border-radius:14px;padding:28px;border:1px solid #e8e4de}
+.result-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.result-title{font-size:16px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif;margin-bottom:4px}
+.char-badge{font-size:12px;color:#6b5a42;background:#f5f0e8;padding:3px 10px;border-radius:12px;font-weight:600}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
+.icon-btn{background:0 0;border:1px solid #e0dcd6;border-radius:8px;padding:6px 8px;color:#6b5a42;display:flex;align-items:center}
+.icon-btn:hover{background:#f5f0e8}
+.sm-btn{display:flex;align-items:center;gap:4px;border:1px solid #e0dcd6;border-radius:8px;padding:6px 12px;font-size:12px;color:#6b5a42}
+.sm-btn:hover{background:#f5f0e8}
+.sm-btn.active{background:#f5f0e8;border-color:#c8b89a}
+.title-input{width:100%;padding:10px 14px;border:1px solid #e0dcd6;border-radius:8px;font-size:16px;font-weight:700;font-family:'Noto Serif JP',serif;margin-bottom:10px}
+.edit-textarea{width:100%;padding:16px;border:1px solid #e0dcd6;border-radius:10px;font-size:14px;line-height:2;resize:vertical;background:#fdfcfa}
+.preview-area{padding:20px 24px;background:#fdfcfa;border-radius:10px;border:1px solid #f0ede8;margin-top:8px;max-height:500px;overflow-y:auto}
+.preview-title{font-size:18px;font-weight:700;color:#2d2518;margin-bottom:20px;font-family:'Noto Serif JP',serif}
+.preview-p{font-size:14px;line-height:2;color:#3d3225;margin-bottom:16px;white-space:pre-wrap}
+.revision-area{margin-top:20px;padding:16px 20px;background:#faf8f5;border-radius:10px}
+.revision-row{display:flex;gap:8px;margin-top:8px}
+.revision-input{flex:1;padding:9px 14px;border:1px solid #e0dcd6;border-radius:8px;font-size:13px}
+.revise-btn{display:flex;align-items:center;gap:5px;padding:9px 16px;background:#6b5a42;color:#fff;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap}
+.revise-btn:disabled{opacity:.45;cursor:not-allowed}
+.save-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap}
+.save-draft-btn{padding:10px 22px;background:#f5f0e8;color:#5a4832;border:1px solid #d8d0c0;border-radius:10px;font-size:13px;font-weight:600}
+.save-draft-btn:hover{background:#ebe5d8}
+.save-complete-btn{display:flex;align-items:center;gap:6px;padding:10px 24px;background:linear-gradient(135deg,#3d6b35,#4a8040);color:#fff;border-radius:10px;font-size:13px;font-weight:600}
+.save-complete-btn:hover{box-shadow:0 4px 12px rgba(61,107,53,.3)}
+.cancel-btn{padding:10px 22px;background:#f5f0e8;color:#8a8070;border-radius:8px;font-size:13px}
+.back-link{display:flex;align-items:center;gap:4px;color:#8b7355;font-size:13px;padding:8px 0;margin-top:12px}
+.back-link:hover{color:#5a4832}
+
+.filter-bar{display:flex;gap:6px;margin-bottom:20px}
+.filter-btn{display:flex;align-items:center;gap:5px;padding:6px 14px;background:#f5f0e8;border:1px solid transparent;border-radius:8px;font-size:12px;color:#6b5a42;font-weight:500}
+.filter-btn:hover{background:#ebe5d8}
+.filter-btn.active{background:#3d3225;color:#f0e8d8}
+.filter-count{font-size:10px;background:rgba(0,0,0,.08);border-radius:8px;padding:1px 6px}
+.column-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.column-card{background:#fff;border-radius:12px;padding:18px 20px;border:1px solid #e8e4de;cursor:pointer;transition:all .2s}
+.column-card:hover{border-color:#c8b89a;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.status-tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px}
+.status-complete{background:#ecfdf5;color:#065f46}
+.status-draft{background:#fef9e7;color:#92400e}
+.card-title{font-size:15px;font-weight:700;color:#2d2518;margin-bottom:6px;font-family:'Noto Serif JP',serif;line-height:1.4}
+.card-excerpt{font-size:12px;color:#8a8070;line-height:1.6;margin-bottom:10px}
+.card-footer{display:flex;justify-content:space-between;align-items:center}
+.card-chars{font-size:12px;color:#999}
+.delete-btn{color:#c4a882;padding:4px;border-radius:4px;display:flex}
+.delete-btn:hover{color:#b91c1c}
+.complete-sm-btn{display:flex;align-items:center;gap:4px;background:#3d6b35;border-radius:8px;padding:6px 14px;font-size:12px;color:#fff;font-weight:600}
+.empty-state{text-align:center;padding:48px 20px;color:#8a8070;font-size:14px}
+.empty-hint{font-size:13px;color:#aaa;margin-top:6px}
+
+.upload-area{display:flex;align-items:center;gap:12px;padding:20px 24px;background:#fff;border-radius:12px;border:1px dashed #d0c8b8;flex-wrap:wrap;margin-bottom:16px}
+.upload-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;background:#3d3225;color:#f0e8d8;border-radius:10px;font-size:13px;font-weight:600}
+.upload-btn:hover{background:#5a4832}
+.upload-hint{font-size:12px;color:#999}
+.upload-divider{margin:0 8px;color:#ccc}
+.manual-btn{padding:10px 20px;background:#f5f0e8;color:#5a4832;border:1px solid #d8d0c0;border-radius:10px;font-size:13px;font-weight:500}
+.manual-btn:hover{background:#ebe5d8}
+.manual-area{margin-bottom:16px;padding:20px;background:#fff;border-radius:12px;border:1px solid #e8e4de}
+.section-title{font-size:14px;font-weight:600;color:#5a4832;margin-bottom:12px;letter-spacing:.03em}
+.past-list{display:flex;flex-direction:column;gap:8px}
+.past-card{display:flex;align-items:center;gap:12px;padding:14px 18px;background:#fff;border-radius:10px;border:1px solid #e8e4de}
+.past-card-info{flex:1;min-width:0}
+.past-card-title{font-size:14px;font-weight:600;color:#2d2518;margin-bottom:4px}
+.past-card-excerpt{font-size:12px;color:#8a8070;margin-bottom:4px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.past-card-meta{font-size:11px;color:#aaa}
+
+.rule-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;font-size:14px;line-height:1.6}
+.rule-dot{color:#c8956a;font-size:8px;margin-top:6px;flex-shrink:0}
+.rule-dot-custom{color:#8b7355}
+.rule-text{flex:1}
+.rule-add-row{display:flex;gap:8px;margin-top:16px}
+.rule-input{flex:1;padding:10px 14px;border:1px solid #e0dcd6;border-radius:8px;font-size:13px}
+.add-rule-btn{padding:10px 22px;background:#3d3225;color:#f0e8d8;border-radius:8px;font-size:13px;font-weight:600}
+
+@media(max-width:768px){
+  .sidebar{width:56px;padding:12px 0}
+  .sidebar-logo{padding:0 12px;justify-content:center}
+  .sidebar-title,.nav-item span,.user-info-name,.nav-badge{display:none}
+  .nav-item{justify-content:center;padding:10px}
+  .nav-item svg{margin-right:0}
+  .sidebar-footer{flex-direction:column;gap:8px;padding:8px}
+  .main-content{margin-left:56px}
+  .view-container{padding:20px 16px}
+  .column-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading-screen"><div class="loading-spinner"></div><p class="loading-text">読み込み中...</p></div></div>
+<script>
+// ╔════════════════════════════════════════════════════════════╗
+// ║  ★ 管理者設定 — Supabase の接続情報のみ記入              ║
+// ║  APIキーはデプロイ後にブラウザの管理画面から設定します     ║
+// ╚════════════════════════════════════════════════════════════╝
+const CONFIG = {
+  SUPABASE_URL:      'https://jwvsblvfepdfgfuaiayz.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3dnNibHZmZXBkZmdmdWFpYXl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzQ1NDgsImV4cCI6MjA4Njc1MDU0OH0.GkVboKeW7ZUPR8mtwhUaWpHGRA6qg5BPuEFPXW8T-iE',
+};
+// ═══════════════════════════════════════════════════════════════
+
+const DEFAULT_RULES=[{id:'r1',text:'1,500〜3,000字程度'},{id:'r2',text:'各セクションの文字数はおおよそ均等にする（例：500字×4セクション）'}];
+const cc=t=>(t||'').replace(/\s/g,'').length;
+const fmt=d=>{const x=new Date(d);return`${x.getFullYear()}/${String(x.getMonth()+1).padStart(2,'0')}/${String(x.getDate()).padStart(2,'0')}`};
+const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
+const $=s=>document.querySelector(s);
+const icons={
+pen:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`,
+file:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`,
+settings:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`,
+archive:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`,
+sparkle:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.5L19.5 10l-5.6 1.5L12 17l-1.9-5.5L4.5 10l5.6-1.5Z"/></svg>`,
+user:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+upload:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+trash:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`,
+check:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+chevLeft:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`,
+edit:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+refresh:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
+copy:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+logout:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`};
+
+let db=null,apiKey='';
+let state={currentUser:null,view:'write',viewingColumn:null,editMode:false,users:[],pastColumns:[],columns:[],customRules:[]};
+let writeState={prompt:'',result:null,editMode:false,editTitle:'',editContent:'',feedback:'',generating:false,revising:false,error:''};
+let archiveFilter='all',showManual=false,detEdit={title:'',content:''};
+
+// ─── DB ops ───
+async function dbGet(table,q){const r=await db.from(table).select('*');return r.data||[];}
+async function dbLoadUsers(){const{data}=await db.from('users').select('*').order('name');return data||[];}
+async function dbCreateUser(name){const{data,error}=await db.from('users').insert({name}).select().single();if(error){if(error.code==='23505'){const{data:ex}=await db.from('users').select('*').eq('name',name).single();return ex;}throw error;}return data;}
+async function dbLoadPastColumns(uid){const{data}=await db.from('past_columns').select('*').eq('user_id',uid).order('uploaded_at',{ascending:false});return data||[];}
+async function dbAddPastColumn(uid,title,content){const{data}=await db.from('past_columns').insert({user_id:uid,title,content,char_count:cc(content)}).select().single();return data;}
+async function dbDeletePastColumn(id){await db.from('past_columns').delete().eq('id',id);}
+async function dbLoadColumns(uid){const{data}=await db.from('columns').select('*').eq('user_id',uid).order('updated_at',{ascending:false});return data||[];}
+async function dbAddColumn(uid,col){const{data}=await db.from('columns').insert({user_id:uid,title:col.title,content:col.content,char_count:col.charCount,status:col.status,original_prompt:col.originalPrompt}).select().single();return data;}
+async function dbUpdateColumn(id,u){const{data}=await db.from('columns').update(u).eq('id',id).select().single();return data;}
+async function dbDeleteColumn(id){await db.from('columns').delete().eq('id',id);}
+async function dbLoadCustomRules(uid){const{data}=await db.from('custom_rules').select('*').eq('user_id',uid).order('created_at');return data||[];}
+async function dbAddCustomRule(uid,text){const{data}=await db.from('custom_rules').insert({user_id:uid,text}).select().single();return data;}
+async function dbDeleteCustomRule(id){await db.from('custom_rules').delete().eq('id',id);}
+
+// Settings
+async function dbGetSetting(key){const{data}=await db.from('app_settings').select('value').eq('key',key).single();return data?.value||'';}
+async function dbSetSetting(key,value){await db.from('app_settings').upsert({key,value},{onConflict:'key'});}
+
+async function loadApiKey(){apiKey=await dbGetSetting('anthropic_api_key');}
+async function loadUserData(){if(!state.currentUser)return;const uid=state.currentUser.id;[state.pastColumns,state.columns,state.customRules]=await Promise.all([dbLoadPastColumns(uid),dbLoadColumns(uid),dbLoadCustomRules(uid)]);}
+
+// ─── AI ───
+async function generateColumnAI(prompt,pastCols,rules,draft,feedback){
+  if(!apiKey)throw new Error('APIキーが設定されていません。管理者に連絡してください。');
+  const rulesText=[...DEFAULT_RULES,...rules].map(r=>`・${r.text}`).join('\n');
+  const pastSamples=(pastCols||[]).slice(0,5).map((c,i)=>`【過去コラム${i+1}】\nタイトル: ${c.title}\n${c.content}`).join('\n\n---\n\n');
+  const sys=`あなたは、過去のコラムの文体・論調・思考パターンを完璧に模倣するゴーストライターです。\n以下のルールを厳守してコラムを執筆してください：\n\n【執筆ルール】\n${rulesText}\n\n【重要な制約】\n- 必ず1,500〜3,000字（空白除く）で書くこと\n- セクション数は3〜5つで、各セクションの文字数をおおよそ均等にすること\n- 過去コラムの文体・口調・表現の癖を徹底的に真似ること\n- そのまま公開できる品質に仕上げること\n- タイトルも付けること\n\n【出力フォーマット】\nTITLE: （タイトル）\n---\n（本文：セクション間は空行2つで区切る）`;
+  let msg;
+  if(draft&&feedback){msg=`以下のコラム草稿を修正してください。\n\n【修正指示】\n${feedback}\n\n【現在の草稿】\n${draft}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
+  else{msg=`以下の内容・メモをもとにコラムを執筆してください。\n\n【書きたい内容・メモ】\n${prompt}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:msg}]})});
+  if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`APIエラー (${resp.status})`);}
+  const data=await resp.json();const text=(data.content||[]).map(b=>b.text||'').join('');
+  const tm=text.match(/TITLE:\s*(.+)/);const title=tm?tm[1].trim():'無題のコラム';const body=text.replace(/TITLE:\s*.+\n-{2,}\n?/,'').trim();
+  return{title,content:body,charCount:cc(body)};
+}
+
+// ─── Render ───
+function render(){if(!db){renderConfigError();return;}if(!state.currentUser){renderLogin();return;}renderApp();}
+
+function renderConfigError(){
+  const missing=[];if(!CONFIG.SUPABASE_URL)missing.push('SUPABASE_URL');if(!CONFIG.SUPABASE_ANON_KEY)missing.push('SUPABASE_ANON_KEY');
+  $('#app').innerHTML=`<div class="error-screen"><div class="error-card"><div class="error-icon">⚙️</div><h2 class="error-title">初期設定が必要です</h2><p class="error-desc">管理者が index.html の CONFIG にSupabase接続情報を設定してください。</p><div class="error-code">未設定：${missing.join(', ')}</div></div></div>`;
+}
+
+// ─── Login + Admin ───
+let loginMode='login'; // 'login' | 'admin'
+
+async function renderLogin(){
+  if(loginMode==='admin'){renderAdmin();return;}
+  try{state.users=await dbLoadUsers();}catch(e){$('#app').innerHTML=`<div class="error-screen"><div class="error-card"><div class="error-icon">❌</div><h2 class="error-title">DB接続エラー</h2><p class="error-desc">Supabaseへの接続に失敗しました。</p><div class="error-code">${esc(e.message)}</div></div></div>`;return;}
+  const users=state.users;
+  $('#app').innerHTML=`<div class="login-container"><div class="login-card">
+    <div class="login-header"><div class="logo-mark">筆</div><h1 class="login-title">Column Writer</h1><p class="login-subtitle">AIコラム執筆アシスタント</p></div>
+    ${users.length?`<div id="user-list"><p class="login-label">アカウントを選択</p>${users.map(u=>`<button class="user-btn" onclick="loginAs('${u.id}')">${icons.user}<span>${esc(u.name)}</span></button>`).join('')}<button class="new-account-btn" onclick="$('#user-list').style.display='none';$('#create-form').style.display='';$('#login-name').focus()">＋ 新しいアカウントを作成</button></div>`:''}
+    <div id="create-form" style="${users.length?'display:none':''}"><p class="login-label">${users.length?'新しいアカウント':'名前を入力してください'}</p><div class="login-row"><input class="login-input" id="login-name" placeholder="例：田中太郎" onkeydown="if(event.key==='Enter')doCreateUser()"><button class="login-submit" onclick="doCreateUser()">開始</button></div>${users.length?`<button class="back-btn-small" onclick="$('#user-list').style.display='';$('#create-form').style.display='none'">← 戻る</button>`:''}<div id="login-error"></div></div>
+    <div class="login-footer"><button class="admin-link" onclick="loginMode='admin';render()">⚙ 管理者設定</button></div>
+  </div></div>`;
+}
+
+window.loginAs=async function(uid){const u=state.users.find(x=>x.id===uid);if(!u)return;state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();};
+window.doCreateUser=async function(){const name=($('#login-name')?.value||'').trim();if(!name)return;try{const u=await dbCreateUser(name);state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();}catch(e){$('#login-error').innerHTML=`<div class="login-error">${esc(e.message)}</div>`;}};
+
+// ─── Admin Panel ───
+async function renderAdmin(){
+  const hasKey=!!(await dbGetSetting('anthropic_api_key'));
+  $('#app').innerHTML=`<div class="login-container"><div class="admin-card">
+    <div class="admin-header"><div class="admin-badge">ADMIN</div><h2 class="admin-title">管理者設定</h2></div>
+    <div id="admin-auth"><div class="admin-section"><div class="admin-section-title">管理者パスワード</div><div class="admin-hint">初期パスワードは「admin」です。</div><div class="login-row"><input class="admin-input" id="admin-pw" type="password" placeholder="パスワードを入力" onkeydown="if(event.key==='Enter')doAdminAuth()"><button class="login-submit" onclick="doAdminAuth()">ログイン</button></div><div id="admin-auth-msg"></div></div></div>
+    <div id="admin-panel" style="display:none">
+      <div class="admin-status"><span class="dot ${hasKey?'on':'off'}"></span>${hasKey?'APIキー設定済み':'APIキー未設定 — コラム生成ができません'}</div>
+      <div class="admin-section"><div class="admin-section-title">Anthropic APIキー</div><div class="admin-hint">console.anthropic.com から取得。全ユーザーで共用されます。</div><input class="admin-input mono" id="admin-apikey" type="password" placeholder="sk-ant-api03-..."><button class="admin-save" onclick="doSaveApiKey()">APIキーを保存</button><div id="apikey-msg"></div></div>
+      <div class="admin-section" style="margin-top:24px"><div class="admin-section-title">管理者パスワード変更</div><input class="admin-input" id="admin-newpw" type="password" placeholder="新しいパスワード" style="margin-bottom:8px"><input class="admin-input" id="admin-newpw2" type="password" placeholder="新しいパスワード（確認）"><button class="admin-save" onclick="doChangePw()" style="background:#6b5a42">パスワードを変更</button><div id="pw-msg"></div></div>
+    </div>
+    <div style="margin-top:20px;text-align:center"><button class="back-btn-small" onclick="loginMode='login';render()">← ログイン画面に戻る</button></div>
+  </div></div>`;
+}
+
+window.doAdminAuth=async function(){
+  const pw=($('#admin-pw')?.value||'').trim();if(!pw)return;
+  const stored=await dbGetSetting('admin_password');
+  if(pw===stored){$('#admin-auth').style.display='none';$('#admin-panel').style.display='';
+    const currentKey=await dbGetSetting('anthropic_api_key');if(currentKey){const masked='sk-ant-...'+currentKey.slice(-4);$('#admin-apikey').placeholder=masked;}
+  }else{$('#admin-auth-msg').innerHTML='<div class="admin-msg err" style="margin-top:8px">パスワードが違います</div>';}
+};
+
+window.doSaveApiKey=async function(){
+  const key=($('#admin-apikey')?.value||'').trim();
+  if(!key){$('#apikey-msg').innerHTML='<div class="admin-msg err" style="margin-top:8px">APIキーを入力してください</div>';return;}
+  try{await dbSetSetting('anthropic_api_key',key);$('#apikey-msg').innerHTML='<div class="admin-msg ok" style="margin-top:8px">✓ APIキーを保存しました</div>';apiKey=key;}
+  catch(e){$('#apikey-msg').innerHTML=`<div class="admin-msg err" style="margin-top:8px">${esc(e.message)}</div>`;}
+};
+
+window.doChangePw=async function(){
+  const pw1=($('#admin-newpw')?.value||'').trim(),pw2=($('#admin-newpw2')?.value||'').trim();
+  if(!pw1){$('#pw-msg').innerHTML='<div class="admin-msg err" style="margin-top:8px">パスワードを入力してください</div>';return;}
+  if(pw1!==pw2){$('#pw-msg').innerHTML='<div class="admin-msg err" style="margin-top:8px">パスワードが一致しません</div>';return;}
+  try{await dbSetSetting('admin_password',pw1);$('#pw-msg').innerHTML='<div class="admin-msg ok" style="margin-top:8px">✓ パスワードを変更しました</div>';}
+  catch(e){$('#pw-msg').innerHTML=`<div class="admin-msg err" style="margin-top:8px">${esc(e.message)}</div>`;}
+};
+
+// ─── App Shell ───
+function renderApp(){
+  const dc=state.columns.filter(c=>c.status==='draft').length;
+  const nav=[{id:'write',icon:icons.pen,label:'コラム執筆'},{id:'archive',icon:icons.archive,label:'作成済みコラム',badge:dc||''},{id:'past',icon:icons.file,label:'過去コラム管理'},{id:'rules',icon:icons.settings,label:'執筆ルール'}];
+  $('#app').innerHTML=`<div class="app-container"><nav class="sidebar"><div><div class="sidebar-logo"><div class="logo-mark-sm">筆</div><span class="sidebar-title">Column Writer</span></div><div class="nav-section">${nav.map(n=>`<button class="nav-item ${state.view===n.id?'active':''}" onclick="switchView('${n.id}')">${n.icon}<span>${n.label}</span>${n.badge?`<span class="nav-badge">${n.badge}</span>`:''}</button>`).join('')}</div></div><div class="sidebar-footer"><div class="user-info">${icons.user}<span class="user-info-name">${esc(state.currentUser.name)}</span></div><button class="logout-btn" onclick="doLogout()" title="ログアウト">${icons.logout}</button></div></nav><main class="main-content"><div id="vc" class="view-container"></div></main></div>`;
+  renderView();
+}
+window.switchView=function(v){state.view=v;state.viewingColumn=null;state.editMode=false;renderView();};
+window.doLogout=function(){state.currentUser=null;localStorage.removeItem('cw-uid');state.view='write';render();};
+function renderView(){const el=$('#vc');if(!el)return;switch(state.view){case'write':renderWrite(el);break;case'archive':state.viewingColumn?renderDetail(el):renderArchive(el);break;case'past':renderPast(el);break;case'rules':renderRules(el);break;}}
+
+// ─── Write ───
+function renderWrite(el){
+  if(!writeState.result){
+    el.innerHTML=`<h2 class="view-title">コラム執筆</h2><p class="view-desc">書きたい内容を入力すると、あなたの文体でコラムを生成します</p><div class="write-card"><div class="info-bar"><span>📚 過去コラム：<strong>${state.pastColumns.length}</strong>件</span><span>📏 ルール：<strong>${DEFAULT_RULES.length+state.customRules.length}</strong>件</span></div><label class="field-label">どういった内容のコラムを書きたいですか？</label><p class="field-hint">箇条書きのメモ、話の流れ、盛り込みたいエピソードなど、思いつくままに詳しく書いてください。</p><textarea class="prompt-textarea" id="pi" rows="14" placeholder="例：&#10;・新年明けましておめでとうございます&#10;・「2026年の大予想」みたいな記事が出ている&#10;・ABC予想の話&#10;・コンサルの仕事との繋がりを書きたい">${esc(writeState.prompt)}</textarea><div class="prompt-footer"><span class="char-indicator" id="wcc">${writeState.prompt?cc(writeState.prompt)+'字 入力中':''}</span><button class="generate-btn" id="gb" onclick="doGenerate()" ${writeState.generating||!writeState.prompt.trim()?'disabled':''}>${writeState.generating?`<span class="mini-spinner"></span> 生成中...（30秒ほどお待ちください）`:`${icons.sparkle} コラムを生成`}</button></div>${writeState.error?`<div class="error-msg">${esc(writeState.error)}</div>`:''}</div>`;
+    const ta=$('#pi');ta.addEventListener('input',()=>{writeState.prompt=ta.value;$('#wcc').textContent=ta.value?cc(ta.value)+'字 入力中':'';$('#gb').disabled=writeState.generating||!ta.value.trim();});
+  }else{
+    const count=cc(writeState.editContent),inR=count>=1500&&count<=3000;
+    el.innerHTML=`<h2 class="view-title">コラム執筆</h2><p class="view-desc">生成結果を確認・編集してください</p><div class="result-card"><div class="result-header"><div><div class="result-title">生成結果</div><span class="char-badge">${count}字 ${inR?'✓':'⚠️ 範囲外'}</span></div><div class="header-actions"><button class="icon-btn" onclick="doCopyW()" id="cpw" title="コピー">${icons.copy}</button><button class="sm-btn ${writeState.editMode?'active':''}" onclick="writeState.editMode=!writeState.editMode;renderView()">${icons.edit} ${writeState.editMode?'プレビュー':'直接編集'}</button></div></div>${writeState.editMode?`<input class="title-input" id="wet" value="${esc(writeState.editTitle)}"><textarea class="edit-textarea" id="wec" rows="20">${esc(writeState.editContent)}</textarea>`:`<div class="preview-area"><h3 class="preview-title">${esc(writeState.editTitle)}</h3>${writeState.editContent.split(/\n\n+/).map(p=>`<p class="preview-p">${esc(p)}</p>`).join('')}</div>`}<div class="revision-area"><label class="field-label">AIに修正を指示する</label><div class="revision-row"><input class="revision-input" id="wfb" placeholder="例：もう少しカジュアルに、最後を短くして" value="${esc(writeState.feedback)}" onkeydown="if(event.key==='Enter')doRevise()"><button class="revise-btn" onclick="doRevise()" ${writeState.revising||!writeState.feedback.trim()?'disabled':''}>${writeState.revising?'<span class="mini-spinner"></span>':icons.refresh} 再生成</button></div></div>${writeState.error?`<div class="error-msg">${esc(writeState.error)}</div>`:''}<div class="save-actions"><button class="save-draft-btn" onclick="doSaveCol('draft')">下書き保存</button><button class="save-complete-btn" onclick="doSaveCol('complete')">${icons.check} 完成として保存</button></div><button class="back-link" onclick="resetWrite()">${icons.chevLeft} 最初からやり直す</button></div>`;
+    if(writeState.editMode){const t=$('#wet'),c=$('#wec');if(t)t.oninput=()=>{writeState.editTitle=t.value};if(c)c.oninput=()=>{writeState.editContent=c.value};}
+    const fb=$('#wfb');if(fb)fb.oninput=()=>{writeState.feedback=fb.value};
+  }
+}
+window.doGenerate=async function(){writeState.generating=true;writeState.error='';renderView();try{const r=await generateColumnAI(writeState.prompt,state.pastColumns,state.customRules);writeState.result=r;writeState.editTitle=r.title;writeState.editContent=r.content;}catch(e){writeState.error=e.message;}writeState.generating=false;renderView();};
+window.doRevise=async function(){if(!writeState.feedback.trim())return;writeState.revising=true;writeState.error='';renderView();try{const r=await generateColumnAI(writeState.prompt,state.pastColumns,state.customRules,writeState.editContent,writeState.feedback);writeState.result=r;writeState.editTitle=r.title;writeState.editContent=r.content;writeState.feedback='';}catch(e){writeState.error=e.message;}writeState.revising=false;renderView();};
+window.doCopyW=function(){navigator.clipboard.writeText(writeState.editTitle+'\n\n'+writeState.editContent);const b=$('#cpw');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
+window.resetWrite=function(){writeState={prompt:'',result:null,editMode:false,editTitle:'',editContent:'',feedback:'',generating:false,revising:false,error:''};renderView();};
+window.doSaveCol=async function(s){try{await dbAddColumn(state.currentUser.id,{title:writeState.editTitle,content:writeState.editContent,charCount:cc(writeState.editContent),status:s,originalPrompt:writeState.prompt});state.columns=await dbLoadColumns(state.currentUser.id);writeState={prompt:'',result:null,editMode:false,editTitle:'',editContent:'',feedback:'',generating:false,revising:false,error:''};state.view='archive';renderApp();}catch(e){writeState.error=e.message;renderView();}};
+
+// ─── Archive ───
+function renderArchive(el){const cols=state.columns,filtered=archiveFilter==='all'?cols:cols.filter(c=>c.status===archiveFilter);el.innerHTML=`<h2 class="view-title">作成済みコラム</h2><div class="filter-bar">${['all','complete','draft'].map(f=>{const l=f==='all'?'すべて':f==='complete'?'完成':'下書き';const n=f==='all'?cols.length:cols.filter(c=>c.status===f).length;return`<button class="filter-btn ${archiveFilter===f?'active':''}" onclick="archiveFilter='${f}';renderView()">${l}<span class="filter-count">${n}</span></button>`;}).join('')}</div>${filtered.length===0?`<div class="empty-state"><p>まだコラムがありません</p><p class="empty-hint">「コラム執筆」から作成してください</p></div>`:`<div class="column-grid">${filtered.map(c=>`<div class="column-card" onclick="viewCol('${c.id}')"><div class="card-header"><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span style="font-size:12px;color:#999">${fmt(c.updated_at)}</span></div><div class="card-title">${esc(c.title)}</div><p class="card-excerpt">${esc(c.content.slice(0,120))}...</p><div class="card-footer"><span class="card-chars">${c.char_count}字</span><button class="delete-btn" onclick="event.stopPropagation();delCol('${c.id}')">${icons.trash}</button></div></div>`).join('')}</div>`}`;}
+window.viewCol=function(id){state.viewingColumn=state.columns.find(c=>c.id===id);state.editMode=false;renderView();};
+window.delCol=async function(id){await dbDeleteColumn(id);state.columns=state.columns.filter(c=>c.id!==id);if(state.viewingColumn?.id===id)state.viewingColumn=null;renderView();};
+
+// ─── Detail ───
+function renderDetail(el){const c=state.viewingColumn;if(!c){renderArchive(el);return;}el.innerHTML=`<button class="back-link" onclick="state.viewingColumn=null;state.editMode=false;renderView()">${icons.chevLeft} 一覧に戻る</button><div class="result-header" style="margin-top:16px"><div><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div><div class="header-actions"><button class="icon-btn" onclick="copyCol()" id="cpc" title="コピー">${icons.copy}</button><button class="sm-btn ${state.editMode?'active':''}" onclick="togDetEdit()">${icons.edit} ${state.editMode?'プレビュー':'編集'}</button>${c.status==='draft'?`<button class="complete-sm-btn" onclick="complCol('${c.id}')">${icons.check} 完成にする</button>`:''}</div></div>${state.editMode?`<div style="margin-top:16px"><input class="title-input" id="dt" value="${esc(detEdit.title||c.title)}"><textarea class="edit-textarea" id="dc" rows="20">${esc(detEdit.content||c.content)}</textarea><div style="display:flex;gap:8px;margin-top:12px"><button class="save-draft-btn" onclick="saveDet('${c.id}')">保存</button><button class="cancel-btn" onclick="state.editMode=false;renderView()">キャンセル</button></div></div>`:`<div class="preview-area" style="margin-top:16px"><h3 class="preview-title">${esc(c.title)}</h3>${c.content.split(/\n\n+/).map(p=>`<p class="preview-p">${esc(p)}</p>`).join('')}</div>`}`;if(state.editMode){const t=$('#dt'),c2=$('#dc');if(t)t.oninput=()=>{detEdit.title=t.value};if(c2)c2.oninput=()=>{detEdit.content=c2.value};}}
+window.togDetEdit=function(){if(!state.editMode){detEdit={title:state.viewingColumn.title,content:state.viewingColumn.content};}state.editMode=!state.editMode;renderView();};
+window.saveDet=async function(id){await dbUpdateColumn(id,{title:detEdit.title,content:detEdit.content,char_count:cc(detEdit.content)});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);state.editMode=false;renderView();};
+window.complCol=async function(id){await dbUpdateColumn(id,{status:'complete'});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);renderView();};
+window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+c.content);const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
+
+// ─── Past ───
+function renderPast(el){const past=state.pastColumns;el.innerHTML=`<h2 class="view-title">過去コラム管理</h2><p class="view-desc">過去のコラムをアップロードすると、AIがあなたの文体を学習します</p><div class="upload-area"><input type="file" id="fi" accept=".txt,.md,.docx" multiple style="display:none" onchange="handleFU(this)"><button class="upload-btn" onclick="$('#fi').click()">${icons.upload} ファイルをアップロード</button><span class="upload-hint">.txt .md .docx</span><span class="upload-divider">or</span><button class="manual-btn" onclick="showManual=!showManual;renderView()">テキストで直接入力</button></div>${showManual?`<div class="manual-area"><input class="title-input" id="mt" placeholder="コラムタイトル"><textarea class="edit-textarea" id="mc" placeholder="過去のコラム本文を貼り付けてください" rows="10"></textarea><div style="display:flex;gap:8px;margin-top:12px"><button class="save-draft-btn" onclick="addManual()">追加</button><button class="cancel-btn" onclick="showManual=false;renderView()">キャンセル</button></div></div>`:''}<div style="margin-top:24px"><h3 class="section-title">アップロード済み（${past.length}件）</h3>${past.length===0?`<div class="empty-state"><p>まだ過去コラムがありません</p></div>`:`<div class="past-list">${past.map(c=>`<div class="past-card"><div class="past-card-info"><div class="past-card-title">${esc(c.title)}</div><p class="past-card-excerpt">${esc(c.content.slice(0,100))}...</p><span class="past-card-meta">${c.char_count}字 ・ ${fmt(c.uploaded_at)}</span></div><button class="delete-btn" onclick="delPast('${c.id}')">${icons.trash}</button></div>`).join('')}</div>`}</div>`;}
+window.handleFU=async function(input){const files=input.files;if(!files?.length)return;for(const file of files){try{let text='';if(file.name.endsWith('.docx')){const raw=new TextDecoder('utf-8',{fatal:false}).decode(await file.arrayBuffer());const parts=[];const re=/<w:t[^>]*>([^<]*)<\/w:t>/g;let m;while((m=re.exec(raw))!==null)parts.push(m[1]);text=parts.length?parts.join(''):raw.replace(/<[^>]+>/g,'').trim();}else{text=await file.text();}if(text.trim())await dbAddPastColumn(state.currentUser.id,file.name.replace(/\.[^/.]+$/,''),text.trim());}catch(e){console.error(e);}}state.pastColumns=await dbLoadPastColumns(state.currentUser.id);input.value='';renderView();};
+window.addManual=async function(){const t=($('#mt')?.value||'').trim(),c=($('#mc')?.value||'').trim();if(!c)return;await dbAddPastColumn(state.currentUser.id,t||'無題',c);state.pastColumns=await dbLoadPastColumns(state.currentUser.id);showManual=false;renderView();};
+window.delPast=async function(id){await dbDeletePastColumn(id);state.pastColumns=state.pastColumns.filter(c=>c.id!==id);renderView();};
+
+// ─── Rules ───
+function renderRules(el){const custom=state.customRules;el.innerHTML=`<h2 class="view-title">執筆ルール</h2><p class="view-desc">コラム生成時にAIが参照するルールです</p><div style="margin-bottom:32px"><h3 class="section-title">基本ルール（固定）</h3>${DEFAULT_RULES.map(r=>`<div class="rule-item"><span class="rule-dot">●</span><span>${esc(r.text)}</span></div>`).join('')}</div><div><h3 class="section-title">カスタムルール</h3>${custom.length===0?`<p style="font-size:13px;color:#aaa;margin-bottom:16px">追加されたカスタムルールはありません</p>`:''}${custom.map(r=>`<div class="rule-item"><span class="rule-dot rule-dot-custom">◆</span><span class="rule-text">${esc(r.text)}</span><button class="delete-btn" onclick="delRule('${r.id}')">${icons.trash}</button></div>`).join('')}<div class="rule-add-row"><input class="rule-input" id="nr" placeholder="例：冒頭で読者に問いかける形で始める" onkeydown="if(event.key==='Enter')addRule()"><button class="add-rule-btn" onclick="addRule()">追加</button></div></div>`;}
+window.addRule=async function(){const v=($('#nr')?.value||'').trim();if(!v)return;await dbAddCustomRule(state.currentUser.id,v);state.customRules=await dbLoadCustomRules(state.currentUser.id);renderView();};
+window.delRule=async function(id){await dbDeleteCustomRule(id);state.customRules=state.customRules.filter(r=>r.id!==id);renderView();};
+
+// ─── Init ───
+(async function(){
+  if(!CONFIG.SUPABASE_URL||!CONFIG.SUPABASE_ANON_KEY){render();return;}
+  try{
+    db=supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY);
+    const savedId=localStorage.getItem('cw-uid');
+    if(savedId){const{data}=await db.from('users').select('*').eq('id',savedId).single();if(data){state.currentUser=data;await loadApiKey();await loadUserData();}}
+  }catch(e){console.error(e);db=null;}
+  render();
+})();
+</script>
+</body>
+</html>

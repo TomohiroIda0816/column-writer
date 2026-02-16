@@ -252,7 +252,7 @@ let archiveFilter='all',showManual=false,detEdit={title:'',content:''};
 // ─── DB ops ───
 async function dbGet(table,q){const r=await db.from(table).select('*');return r.data||[];}
 async function dbLoadUsers(){const{data}=await db.from('users').select('*').order('name');return data||[];}
-async function dbCreateUser(name){const{data,error}=await db.from('users').insert({name}).select().single();if(error){if(error.code==='23505'){const{data:ex}=await db.from('users').select('*').eq('name',name).single();return ex;}throw error;}return data;}
+async function dbCreateUser(name,password){const{data,error}=await db.from('users').insert({name,password:password||''}).select().single();if(error){if(error.code==='23505')throw new Error('この名前は既に使われています');throw error;}return data;}
 async function dbLoadPastColumns(uid){const{data}=await db.from('past_columns').select('*').eq('user_id',uid).order('uploaded_at',{ascending:false});return data||[];}
 async function dbAddPastColumn(uid,title,content){const{data}=await db.from('past_columns').insert({user_id:uid,title,content,char_count:cc(content)}).select().single();return data;}
 async function dbDeletePastColumn(id){await db.from('past_columns').delete().eq('id',id);}
@@ -368,25 +368,86 @@ function renderConfigError(){
 
 // ─── Login + Admin ───
 let loginMode='login'; // 'login' | 'admin'
+let loginStep='select'; // 'select' | 'password' | 'create'
+let loginTarget=null; // user object being logged into
 
 async function renderLogin(){
   if(loginMode==='admin'){renderAdmin();return;}
   try{state.users=await dbLoadUsers();}catch(e){$('#app').innerHTML=`<div class="error-screen"><div class="error-card"><div class="error-icon">❌</div><h2 class="error-title">DB接続エラー</h2><p class="error-desc">Supabaseへの接続に失敗しました。</p><div class="error-code">${esc(e.message)}</div></div></div>`;return;}
   const users=state.users;
+  let body='';
+
+  if(loginStep==='password'&&loginTarget){
+    body=`
+      <p class="login-label">${esc(loginTarget.name)} でログイン</p>
+      <div class="login-row">
+        <input class="login-input" id="login-pw" type="password" placeholder="パスワードを入力" onkeydown="if(event.key==='Enter')doPasswordLogin()">
+        <button class="login-submit" onclick="doPasswordLogin()">ログイン</button>
+      </div>
+      <button class="back-btn-small" onclick="loginStep='select';loginTarget=null;render()">← 戻る</button>
+      <div id="login-error"></div>`;
+  }else if(loginStep==='create'||!users.length){
+    body=`
+      <p class="login-label">${users.length?'新しいアカウント':'最初のアカウントを作成'}</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input class="login-input" id="login-name" placeholder="名前（例：田中太郎）" onkeydown="if(event.key==='Enter')document.getElementById('login-title-input').focus()">
+        <input class="login-input" id="login-title-input" placeholder="肩書き（例：アナリスト）" onkeydown="if(event.key==='Enter')document.getElementById('login-newpw').focus()">
+        <input class="login-input" id="login-newpw" type="password" placeholder="パスワード" onkeydown="if(event.key==='Enter')document.getElementById('login-newpw2').focus()">
+        <div class="login-row">
+          <input class="login-input" id="login-newpw2" type="password" placeholder="パスワード（確認）" onkeydown="if(event.key==='Enter')doCreateUser()">
+          <button class="login-submit" onclick="doCreateUser()">作成</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#b0a898;margin-top:6px">肩書きはHP署名に使用されます</p>
+      ${users.length?`<button class="back-btn-small" onclick="loginStep='select';render()">← 戻る</button>`:''}
+      <div id="login-error"></div>`;
+  }else{
+    body=`
+      <div id="user-list">
+        <p class="login-label">アカウントを選択</p>
+        ${users.map(u=>`<button class="user-btn" onclick="selectUser('${u.id}')">${icons.user}<span>${esc(u.name)}${u.title?` <span style="color:#8a8070;font-size:12px">${esc(u.title)}</span>`:''}</span></button>`).join('')}
+        <button class="new-account-btn" onclick="loginStep='create';render()">＋ 新しいアカウントを作成</button>
+      </div>`;
+  }
+
   $('#app').innerHTML=`<div class="login-container"><div class="login-card">
     <div class="login-header"><div class="logo-mark">筆</div><h1 class="login-title">Column Writer</h1><p class="login-subtitle">AIコラム執筆アシスタント</p></div>
-    ${users.length?`<div id="user-list"><p class="login-label">アカウントを選択</p>${users.map(u=>`<button class="user-btn" onclick="loginAs('${u.id}')">${icons.user}<span>${esc(u.name)}${u.title?` <span style="color:#8a8070;font-size:12px">${esc(u.title)}</span>`:''}</span></button>`).join('')}<button class="new-account-btn" onclick="$('#user-list').style.display='none';$('#create-form').style.display='';$('#login-name').focus()">＋ 新しいアカウントを作成</button></div>`:''}
-    <div id="create-form" style="${users.length?'display:none':''}"><p class="login-label">${users.length?'新しいアカウント':'名前を入力してください'}</p><div style="display:flex;flex-direction:column;gap:8px"><div class="login-row"><input class="login-input" id="login-name" placeholder="例：田中太郎" onkeydown="if(event.key==='Enter')document.getElementById('login-title-input').focus()"></div><div class="login-row"><input class="login-input" id="login-title-input" placeholder="肩書き（例：アナリスト）" onkeydown="if(event.key==='Enter')doCreateUser()"><button class="login-submit" onclick="doCreateUser()">開始</button></div></div><p style="font-size:11px;color:#b0a898;margin-top:6px">肩書きはHP署名（MAVIS PARTNERS ○○ 氏名）に使用されます</p>${users.length?`<button class="back-btn-small" onclick="$('#user-list').style.display='';$('#create-form').style.display='none'">← 戻る</button>`:''}<div id="login-error"></div></div>
+    ${body}
     <div class="login-footer"><button class="admin-link" onclick="loginMode='admin';render()">⚙ 管理者設定</button></div>
   </div></div>`;
+  // Auto-focus password field
+  setTimeout(()=>{const pw=$('#login-pw');if(pw)pw.focus();const nm=$('#login-name');if(nm&&!pw)nm.focus();},50);
 }
 
-window.loginAs=async function(uid){const u=state.users.find(x=>x.id===uid);if(!u)return;state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();};
+window.selectUser=function(uid){
+  const u=state.users.find(x=>x.id===uid);if(!u)return;
+  loginTarget=u;loginStep='password';render();
+};
+window.doPasswordLogin=async function(){
+  const pw=($('#login-pw')?.value||'');
+  if(!loginTarget)return;
+  if(pw!==(loginTarget.password||'')){
+    $('#login-error').innerHTML='<div class="login-error">パスワードが違います</div>';return;
+  }
+  state.currentUser=loginTarget;localStorage.setItem('cw-uid',loginTarget.id);
+  loginStep='select';loginTarget=null;
+  await loadApiKey();await loadUserData();render();
+};
 window.doCreateUser=async function(){
-  const name=($('#login-name')?.value||'').trim();if(!name)return;
+  const name=($('#login-name')?.value||'').trim();
   const title=($('#login-title-input')?.value||'').trim();
-  try{const u=await dbCreateUser(name);if(title)await dbUpdateUserTitle(u.id,title);u.title=title;state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();}
-  catch(e){$('#login-error').innerHTML=`<div class="login-error">${esc(e.message)}</div>`;}
+  const pw1=($('#login-newpw')?.value||'');
+  const pw2=($('#login-newpw2')?.value||'');
+  if(!name){$('#login-error').innerHTML='<div class="login-error">名前を入力してください</div>';return;}
+  if(!pw1){$('#login-error').innerHTML='<div class="login-error">パスワードを入力してください</div>';return;}
+  if(pw1!==pw2){$('#login-error').innerHTML='<div class="login-error">パスワードが一致しません</div>';return;}
+  try{
+    const u=await dbCreateUser(name,pw1);
+    if(title)await dbUpdateUserTitle(u.id,title);
+    u.title=title;state.currentUser=u;localStorage.setItem('cw-uid',u.id);
+    loginStep='select';loginTarget=null;
+    await loadApiKey();await loadUserData();render();
+  }catch(e){$('#login-error').innerHTML=`<div class="login-error">${esc(e.message)}</div>`;}
 };
 
 // ─── Admin Panel ───
@@ -435,7 +496,7 @@ function renderApp(){
   renderView();
 }
 window.switchView=function(v){state.view=v;state.viewingColumn=null;state.editMode=false;renderApp();};
-window.doLogout=function(){state.currentUser=null;localStorage.removeItem('cw-uid');state.view='write';render();};
+window.doLogout=function(){state.currentUser=null;localStorage.removeItem('cw-uid');state.view='write';loginStep='select';loginTarget=null;render();};
 function renderView(){const el=$('#vc');if(!el)return;switch(state.view){case'write':renderWrite(el);break;case'archive':state.viewingColumn?renderDetail(el):renderArchive(el);break;case'past':renderPast(el);break;case'rules':renderRules(el);break;case'profile':renderProfile(el);break;}}
 
 // ─── Write ───
@@ -629,8 +690,18 @@ function renderProfile(el){
         <label class="field-label">署名プレビュー</label>
         <div id="sig-preview" style="padding:12px 16px;background:#faf8f5;border-radius:8px;font-size:14px;color:#5a4832;font-weight:500">${esc(getUserSignature()||'（肩書きを入力すると表示されます）')}</div>
       </div>
-      <button class="generate-btn" onclick="saveProfile()" style="width:100%;justify-content:center">保存</button>
+      <button class="generate-btn" onclick="saveProfile()" style="width:100%;justify-content:center">プロフィールを保存</button>
       <div id="prof-msg"></div>
+    </div>
+    <div style="background:#fff;border-radius:14px;padding:28px;border:1px solid #e8e4de;max-width:480px;margin-top:20px">
+      <label class="field-label">パスワード変更</label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <input class="login-input" id="prof-curpw" type="password" placeholder="現在のパスワード">
+        <input class="login-input" id="prof-newpw" type="password" placeholder="新しいパスワード">
+        <input class="login-input" id="prof-newpw2" type="password" placeholder="新しいパスワード（確認）">
+      </div>
+      <button class="generate-btn" onclick="changeUserPw()" style="width:100%;justify-content:center;margin-top:12px;background:linear-gradient(135deg,#6b5a42,#8b7355)">パスワードを変更</button>
+      <div id="pw-change-msg"></div>
     </div>`;
   const ti=$('#prof-title');
   if(ti)ti.addEventListener('input',()=>{
@@ -646,6 +717,20 @@ window.saveProfile=async function(){
     state.currentUser.title=title;
     $('#prof-msg').innerHTML='<div class="admin-msg ok" style="margin-top:12px">✓ 保存しました</div>';
   }catch(e){$('#prof-msg').innerHTML=`<div class="admin-msg err" style="margin-top:12px">${esc(e.message)}</div>`;}
+};
+window.changeUserPw=async function(){
+  const cur=($('#prof-curpw')?.value||'');
+  const pw1=($('#prof-newpw')?.value||'');
+  const pw2=($('#prof-newpw2')?.value||'');
+  if(cur!==(state.currentUser.password||'')){$('#pw-change-msg').innerHTML='<div class="admin-msg err" style="margin-top:10px">現在のパスワードが違います</div>';return;}
+  if(!pw1){$('#pw-change-msg').innerHTML='<div class="admin-msg err" style="margin-top:10px">新しいパスワードを入力してください</div>';return;}
+  if(pw1!==pw2){$('#pw-change-msg').innerHTML='<div class="admin-msg err" style="margin-top:10px">新しいパスワードが一致しません</div>';return;}
+  try{
+    await db.from('users').update({password:pw1}).eq('id',state.currentUser.id);
+    state.currentUser.password=pw1;
+    $('#pw-change-msg').innerHTML='<div class="admin-msg ok" style="margin-top:10px">✓ パスワードを変更しました</div>';
+    $('#prof-curpw').value='';$('#prof-newpw').value='';$('#prof-newpw2').value='';
+  }catch(e){$('#pw-change-msg').innerHTML=`<div class="admin-msg err" style="margin-top:10px">${esc(e.message)}</div>`;}
 };
 
 // ─── Docx Download ───

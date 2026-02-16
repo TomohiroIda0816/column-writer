@@ -238,7 +238,8 @@ chevLeft:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="cu
 edit:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
 refresh:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
 copy:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
-logout:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`};
+logout:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+globe:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`};
 
 let db=null,apiKey='';
 let state={currentUser:null,view:'write',viewingColumn:null,editMode:false,users:[],pastColumns:[],columns:[],customRules:[]};
@@ -267,12 +268,83 @@ async function dbSetSetting(key,value){await db.from('app_settings').upsert({key
 async function loadApiKey(){apiKey=await dbGetSetting('anthropic_api_key');}
 async function loadUserData(){if(!state.currentUser)return;const uid=state.currentUser.id;[state.pastColumns,state.columns,state.customRules]=await Promise.all([dbLoadPastColumns(uid),dbLoadColumns(uid),dbLoadCustomRules(uid)]);}
 
+// ─── User title (role) ───
+async function dbUpdateUserTitle(uid,title){await db.from('users').update({title}).eq('id',uid);}
+function getUserSignature(){const u=state.currentUser;if(!u)return'';return `MAVIS PARTNERS ${u.title||''} ${u.name}`.trim();}
+
+// ─── WordPress HTML conversion ───
+function contentToWpHtml(title,content,signature){
+  const lines=content.split('\n');
+  let html='';
+  let currentParagraph='';
+  const headings=[];
+
+  function flushParagraph(){
+    if(currentParagraph.trim()){
+      html+=`<p>${currentParagraph.trim()}</p>\n`;
+      currentParagraph='';
+    }
+  }
+
+  for(const line of lines){
+    const headingMatch=line.match(/^##\s+(.+)/);
+    if(headingMatch){
+      flushParagraph();
+      const headingText=headingMatch[1].trim();
+      headings.push(headingText);
+      html+=`<h2>${headingText}</h2>\n`;
+    }else if(line.trim()===''){
+      flushParagraph();
+    }else{
+      if(currentParagraph)currentParagraph+='\n';
+      currentParagraph+=line;
+    }
+  }
+  flushParagraph();
+
+  // Add signature
+  if(signature){
+    html+=`\n<p>${signature}</p>\n`;
+  }
+
+  return html;
+}
+
+function contentToPreviewHtml(title,content,signature){
+  const lines=content.split('\n');
+  let html=`<h1 style="font-size:22px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif;margin-bottom:24px;line-height:1.5">${esc(title)}</h1>`;
+
+  // Build TOC
+  const headings=[];
+  for(const line of lines){
+    const m=line.match(/^##\s+(.+)/);
+    if(m)headings.push(m[1].trim());
+  }
+  if(headings.length>0){
+    html+=`<ul style="list-style:disc;padding-left:20px;margin-bottom:24px;font-size:14px;color:#5a4832">`;
+    headings.forEach(h=>{html+=`<li style="margin-bottom:4px">${esc(h)}</li>`;});
+    html+=`</ul>`;
+  }
+
+  // Build body
+  let currentP='';
+  function flush(){if(currentP.trim()){html+=`<p style="font-size:14px;line-height:2;color:#3d3225;margin-bottom:16px">${esc(currentP.trim())}</p>`;currentP='';}}
+  for(const line of lines){
+    const hm=line.match(/^##\s+(.+)/);
+    if(hm){flush();html+=`<h2 style="font-size:17px;font-weight:700;color:#2d2518;margin:28px 0 12px;font-family:'Noto Serif JP',serif">${esc(hm[1].trim())}</h2>`;}
+    else if(line.trim()===''){flush();}
+    else{if(currentP)currentP+='\n';currentP+=line;}
+  }
+  flush();
+  if(signature){html+=`<p style="font-size:14px;color:#5a4832;margin-top:28px;font-weight:500">${esc(signature)}</p>`;}
+  return html;
+}
 // ─── AI ───
 async function generateColumnAI(prompt,pastCols,rules,draft,feedback){
   if(!apiKey)throw new Error('APIキーが設定されていません。管理者に連絡してください。');
   const rulesText=[...DEFAULT_RULES,...rules].map(r=>`・${r.text}`).join('\n');
   const pastSamples=(pastCols||[]).slice(0,5).map((c,i)=>`【過去コラム${i+1}】\nタイトル: ${c.title}\n${c.content}`).join('\n\n---\n\n');
-  const sys=`あなたは、過去のコラムの文体・論調・思考パターンを完璧に模倣するゴーストライターです。\n以下のルールを厳守してコラムを執筆してください：\n\n【執筆ルール】\n${rulesText}\n\n【重要な制約】\n- 必ず1,500〜3,000字（空白除く）で書くこと\n- セクション数は3〜5つで、各セクションの文字数をおおよそ均等にすること\n- 過去コラムの文体・口調・表現の癖を徹底的に真似ること\n- そのまま公開できる品質に仕上げること\n- タイトルも付けること\n\n【出力フォーマット】\nTITLE: （タイトル）\n---\n（本文：セクション間は空行2つで区切る）`;
+  const sys=`あなたは、過去のコラムの文体・論調・思考パターンを完璧に模倣するゴーストライターです。\n以下のルールを厳守してコラムを執筆してください：\n\n【執筆ルール】\n${rulesText}\n\n【重要な制約】\n- 必ず1,500〜3,000字（空白除く）で書くこと\n- セクション数は3〜5つで、各セクションに見出しを付けること\n- 各セクションの文字数をおおよそ均等にすること\n- 過去コラムの文体・口調・表現の癖を徹底的に真似ること\n- そのまま公開できる品質に仕上げること\n- タイトルも付けること\n\n【出力フォーマット】\n以下の形式で出力。セクション見出しは ## で始めること：\nTITLE: （タイトル）\n---\n## セクション見出し1\n（本文段落。段落間は空行1つ。）\n\n## セクション見出し2\n（本文段落）\n\n## セクション見出し3\n（本文段落）`;
   let msg;
   if(draft&&feedback){msg=`以下のコラム草稿を修正してください。\n\n【修正指示】\n${feedback}\n\n【現在の草稿】\n${draft}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
   else{msg=`以下の内容・メモをもとにコラムを執筆してください。\n\n【書きたい内容・メモ】\n${prompt}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
@@ -301,13 +373,18 @@ async function renderLogin(){
   $('#app').innerHTML=`<div class="login-container"><div class="login-card">
     <div class="login-header"><div class="logo-mark">筆</div><h1 class="login-title">Column Writer</h1><p class="login-subtitle">AIコラム執筆アシスタント</p></div>
     ${users.length?`<div id="user-list"><p class="login-label">アカウントを選択</p>${users.map(u=>`<button class="user-btn" onclick="loginAs('${u.id}')">${icons.user}<span>${esc(u.name)}</span></button>`).join('')}<button class="new-account-btn" onclick="$('#user-list').style.display='none';$('#create-form').style.display='';$('#login-name').focus()">＋ 新しいアカウントを作成</button></div>`:''}
-    <div id="create-form" style="${users.length?'display:none':''}"><p class="login-label">${users.length?'新しいアカウント':'名前を入力してください'}</p><div class="login-row"><input class="login-input" id="login-name" placeholder="例：田中太郎" onkeydown="if(event.key==='Enter')doCreateUser()"><button class="login-submit" onclick="doCreateUser()">開始</button></div>${users.length?`<button class="back-btn-small" onclick="$('#user-list').style.display='';$('#create-form').style.display='none'">← 戻る</button>`:''}<div id="login-error"></div></div>
+    <div id="create-form" style="${users.length?'display:none':''}"><p class="login-label">${users.length?'新しいアカウント':'名前を入力してください'}</p><div style="display:flex;flex-direction:column;gap:8px"><div class="login-row"><input class="login-input" id="login-name" placeholder="例：田中太郎" onkeydown="if(event.key==='Enter')document.getElementById('login-title-input').focus()"></div><div class="login-row"><input class="login-input" id="login-title-input" placeholder="肩書き（例：アナリスト）" onkeydown="if(event.key==='Enter')doCreateUser()"><button class="login-submit" onclick="doCreateUser()">開始</button></div></div><p style="font-size:11px;color:#b0a898;margin-top:6px">肩書きはHP署名（MAVIS PARTNERS ○○ 氏名）に使用されます</p>${users.length?`<button class="back-btn-small" onclick="$('#user-list').style.display='';$('#create-form').style.display='none'">← 戻る</button>`:''}<div id="login-error"></div></div>
     <div class="login-footer"><button class="admin-link" onclick="loginMode='admin';render()">⚙ 管理者設定</button></div>
   </div></div>`;
 }
 
 window.loginAs=async function(uid){const u=state.users.find(x=>x.id===uid);if(!u)return;state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();};
-window.doCreateUser=async function(){const name=($('#login-name')?.value||'').trim();if(!name)return;try{const u=await dbCreateUser(name);state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();}catch(e){$('#login-error').innerHTML=`<div class="login-error">${esc(e.message)}</div>`;}};
+window.doCreateUser=async function(){
+  const name=($('#login-name')?.value||'').trim();if(!name)return;
+  const title=($('#login-title-input')?.value||'').trim();
+  try{const u=await dbCreateUser(name);if(title)await dbUpdateUserTitle(u.id,title);u.title=title;state.currentUser=u;localStorage.setItem('cw-uid',u.id);await loadApiKey();await loadUserData();render();}
+  catch(e){$('#login-error').innerHTML=`<div class="login-error">${esc(e.message)}</div>`;}
+};
 
 // ─── Admin Panel ───
 async function renderAdmin(){
@@ -365,7 +442,7 @@ function renderWrite(el){
     const ta=$('#pi');ta.addEventListener('input',()=>{writeState.prompt=ta.value;$('#wcc').textContent=ta.value?cc(ta.value)+'字 入力中':'';$('#gb').disabled=writeState.generating||!ta.value.trim();});
   }else{
     const count=cc(writeState.editContent),inR=count>=1500&&count<=3000;
-    el.innerHTML=`<h2 class="view-title">コラム執筆</h2><p class="view-desc">生成結果を確認・編集してください</p><div class="result-card"><div class="result-header"><div><div class="result-title">生成結果</div><span class="char-badge">${count}字 ${inR?'✓':'⚠️ 範囲外'}</span></div><div class="header-actions"><button class="icon-btn" onclick="doCopyW()" id="cpw" title="コピー">${icons.copy}</button><button class="sm-btn ${writeState.editMode?'active':''}" onclick="writeState.editMode=!writeState.editMode;renderView()">${icons.edit} ${writeState.editMode?'プレビュー':'直接編集'}</button></div></div>${writeState.editMode?`<input class="title-input" id="wet" value="${esc(writeState.editTitle)}"><textarea class="edit-textarea" id="wec" rows="20">${esc(writeState.editContent)}</textarea>`:`<div class="preview-area"><h3 class="preview-title">${esc(writeState.editTitle)}</h3>${writeState.editContent.split(/\n\n+/).map(p=>`<p class="preview-p">${esc(p)}</p>`).join('')}</div>`}<div class="revision-area"><label class="field-label">AIに修正を指示する</label><div class="revision-row"><input class="revision-input" id="wfb" placeholder="例：もう少しカジュアルに、最後を短くして" value="${esc(writeState.feedback)}" onkeydown="if(event.key==='Enter')doRevise()"><button class="revise-btn" onclick="doRevise()" ${writeState.revising||!writeState.feedback.trim()?'disabled':''}>${writeState.revising?'<span class="mini-spinner"></span>':icons.refresh} 再生成</button></div></div>${writeState.error?`<div class="error-msg">${esc(writeState.error)}</div>`:''}<div class="save-actions"><button class="save-draft-btn" onclick="doSaveCol('draft')">下書き保存</button><button class="save-complete-btn" onclick="doSaveCol('complete')">${icons.check} 完成として保存</button></div><button class="back-link" onclick="resetWrite()">${icons.chevLeft} 最初からやり直す</button></div>`;
+    el.innerHTML=`<h2 class="view-title">コラム執筆</h2><p class="view-desc">生成結果を確認・編集してください</p><div class="result-card"><div class="result-header"><div><div class="result-title">生成結果</div><span class="char-badge">${count}字 ${inR?'✓':'⚠️ 範囲外'}</span></div><div class="header-actions"><button class="icon-btn" onclick="doCopyW()" id="cpw" title="テキストコピー">${icons.copy}</button><button class="sm-btn ${writeState.editMode?'active':''}" onclick="writeState.editMode=!writeState.editMode;renderView()">${icons.edit} ${writeState.editMode?'プレビュー':'直接編集'}</button></div></div>${writeState.editMode?`<input class="title-input" id="wet" value="${esc(writeState.editTitle)}"><textarea class="edit-textarea" id="wec" rows="20">${esc(writeState.editContent)}</textarea>`:`<div class="preview-area" style="padding:28px 32px">${contentToPreviewHtml(writeState.editTitle,writeState.editContent,getUserSignature())}</div>`}<div class="revision-area"><label class="field-label">AIに修正を指示する</label><div class="revision-row"><input class="revision-input" id="wfb" placeholder="例：もう少しカジュアルに、最後を短くして" value="${esc(writeState.feedback)}" onkeydown="if(event.key==='Enter')doRevise()"><button class="revise-btn" onclick="doRevise()" ${writeState.revising||!writeState.feedback.trim()?'disabled':''}>${writeState.revising?'<span class="mini-spinner"></span>':icons.refresh} 再生成</button></div></div>${writeState.error?`<div class="error-msg">${esc(writeState.error)}</div>`:''}<div class="save-actions"><button class="save-draft-btn" onclick="doSaveCol('draft')">下書き保存</button><button class="save-complete-btn" onclick="doSaveCol('complete')">${icons.check} 完成として保存</button></div><button class="back-link" onclick="resetWrite()">${icons.chevLeft} 最初からやり直す</button></div>`;
     if(writeState.editMode){const t=$('#wet'),c=$('#wec');if(t)t.oninput=()=>{writeState.editTitle=t.value};if(c)c.oninput=()=>{writeState.editContent=c.value};}
     const fb=$('#wfb');if(fb)fb.oninput=()=>{writeState.feedback=fb.value};
   }
@@ -382,11 +459,50 @@ window.viewCol=function(id){state.viewingColumn=state.columns.find(c=>c.id===id)
 window.delCol=async function(id){await dbDeleteColumn(id);state.columns=state.columns.filter(c=>c.id!==id);if(state.viewingColumn?.id===id)state.viewingColumn=null;renderView();};
 
 // ─── Detail ───
-function renderDetail(el){const c=state.viewingColumn;if(!c){renderArchive(el);return;}el.innerHTML=`<button class="back-link" onclick="state.viewingColumn=null;state.editMode=false;renderView()">${icons.chevLeft} 一覧に戻る</button><div class="result-header" style="margin-top:16px"><div><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div><div class="header-actions"><button class="icon-btn" onclick="copyCol()" id="cpc" title="コピー">${icons.copy}</button><button class="sm-btn ${state.editMode?'active':''}" onclick="togDetEdit()">${icons.edit} ${state.editMode?'プレビュー':'編集'}</button>${c.status==='draft'?`<button class="complete-sm-btn" onclick="complCol('${c.id}')">${icons.check} 完成にする</button>`:''}</div></div>${state.editMode?`<div style="margin-top:16px"><input class="title-input" id="dt" value="${esc(detEdit.title||c.title)}"><textarea class="edit-textarea" id="dc" rows="20">${esc(detEdit.content||c.content)}</textarea><div style="display:flex;gap:8px;margin-top:12px"><button class="save-draft-btn" onclick="saveDet('${c.id}')">保存</button><button class="cancel-btn" onclick="state.editMode=false;renderView()">キャンセル</button></div></div>`:`<div class="preview-area" style="margin-top:16px"><h3 class="preview-title">${esc(c.title)}</h3>${c.content.split(/\n\n+/).map(p=>`<p class="preview-p">${esc(p)}</p>`).join('')}</div>`}`;if(state.editMode){const t=$('#dt'),c2=$('#dc');if(t)t.oninput=()=>{detEdit.title=t.value};if(c2)c2.oninput=()=>{detEdit.content=c2.value};}}
+function renderDetail(el){
+  const c=state.viewingColumn;if(!c){renderArchive(el);return;}
+  const sig=getUserSignature();
+  const wpHtml=contentToWpHtml(c.title,c.content,sig);
+  const previewHtml=contentToPreviewHtml(c.title,c.content,sig);
+  el.innerHTML=`
+    <button class="back-link" onclick="state.viewingColumn=null;state.editMode=false;renderView()">${icons.chevLeft} 一覧に戻る</button>
+    <div class="result-header" style="margin-top:16px">
+      <div><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div>
+      <div class="header-actions">
+        <button class="sm-btn" onclick="copyWpHtml()" id="cpwp" title="WordPress用HTMLをコピー">${icons.globe} HP用コピー</button>
+        <button class="icon-btn" onclick="copyCol()" id="cpc" title="テキストコピー">${icons.copy}</button>
+        <button class="sm-btn ${state.editMode?'active':''}" onclick="togDetEdit()">${icons.edit} ${state.editMode?'プレビュー':'編集'}</button>
+        ${c.status==='draft'?`<button class="complete-sm-btn" onclick="complCol('${c.id}')">${icons.check} 完成にする</button>`:''}
+      </div>
+    </div>
+    ${state.editMode?`
+      <div style="margin-top:16px">
+        <input class="title-input" id="dt" value="${esc(detEdit.title||c.title)}">
+        <textarea class="edit-textarea" id="dc" rows="20">${esc(detEdit.content||c.content)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="save-draft-btn" onclick="saveDet('${c.id}')">保存</button>
+          <button class="cancel-btn" onclick="state.editMode=false;renderView()">キャンセル</button>
+        </div>
+      </div>
+    `:`
+      <div class="preview-area" style="margin-top:16px;padding:28px 32px">${previewHtml}</div>
+    `}
+    <div id="copy-toast" style="display:none;margin-top:10px;padding:10px 14px;background:#ecfdf5;color:#065f46;border-radius:8px;font-size:13px;text-align:center"></div>`;
+  if(state.editMode){const t=$('#dt'),c2=$('#dc');if(t)t.oninput=()=>{detEdit.title=t.value};if(c2)c2.oninput=()=>{detEdit.content=c2.value};}
+}
 window.togDetEdit=function(){if(!state.editMode){detEdit={title:state.viewingColumn.title,content:state.viewingColumn.content};}state.editMode=!state.editMode;renderView();};
 window.saveDet=async function(id){await dbUpdateColumn(id,{title:detEdit.title,content:detEdit.content,char_count:cc(detEdit.content)});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);state.editMode=false;renderView();};
 window.complCol=async function(id){await dbUpdateColumn(id,{status:'complete'});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);renderView();};
-window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+c.content);const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
+window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+c.content+'\n\n'+getUserSignature());const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
+window.copyWpHtml=function(){
+  const c=state.viewingColumn;
+  const sig=getUserSignature();
+  const html=contentToWpHtml(c.title,c.content,sig);
+  navigator.clipboard.writeText(html).then(()=>{
+    const b=$('#cpwp');if(b){b.innerHTML=icons.check+' コピー完了';setTimeout(()=>{b.innerHTML=icons.globe+' HP用コピー';},2500);}
+    const toast=$('#copy-toast');if(toast){toast.style.display='block';toast.textContent='✓ WordPress用HTMLをクリップボードにコピーしました。WordPressの「テキスト」エディタに貼り付けてください。';setTimeout(()=>{toast.style.display='none';},4000);}
+  });
+};;
 
 // ─── Past ───
 function renderPast(el){

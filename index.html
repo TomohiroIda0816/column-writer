@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans JP','Hiragino Sans',sans-serif;background:#faf8f5;color:#3d3225;min-height:100vh}
@@ -380,8 +381,32 @@ window.complCol=async function(id){await dbUpdateColumn(id,{status:'complete'});
 window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+c.content);const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
 
 // ─── Past ───
-function renderPast(el){const past=state.pastColumns;el.innerHTML=`<h2 class="view-title">過去コラム管理</h2><p class="view-desc">過去のコラムをアップロードすると、AIがあなたの文体を学習します</p><div class="upload-area"><input type="file" id="fi" accept=".txt,.md,.docx" multiple style="display:none" onchange="handleFU(this)"><button class="upload-btn" onclick="document.getElementById('fi').click()">${icons.upload} ファイルをアップロード</button><span class="upload-hint">.txt .md .docx</span><span class="upload-divider">or</span><button class="manual-btn" onclick="showManual=!showManual;renderView()">テキストで直接入力</button></div>${showManual?`<div class="manual-area"><input class="title-input" id="mt" placeholder="コラムタイトル"><textarea class="edit-textarea" id="mc" placeholder="過去のコラム本文を貼り付けてください" rows="10"></textarea><div style="display:flex;gap:8px;margin-top:12px"><button class="save-draft-btn" onclick="addManual()">追加</button><button class="cancel-btn" onclick="showManual=false;renderView()">キャンセル</button></div></div>`:''}<div style="margin-top:24px"><h3 class="section-title">アップロード済み（${past.length}件）</h3>${past.length===0?`<div class="empty-state"><p>まだ過去コラムがありません</p></div>`:`<div class="past-list">${past.map(c=>`<div class="past-card"><div class="past-card-info"><div class="past-card-title">${esc(c.title)}</div><p class="past-card-excerpt">${esc(c.content.slice(0,100))}...</p><span class="past-card-meta">${c.char_count}字 ・ ${fmt(c.uploaded_at)}</span></div><button class="delete-btn" onclick="delPast('${c.id}')">${icons.trash}</button></div>`).join('')}</div>`}</div>`;}
-window.handleFU=async function(input){const files=input.files;if(!files?.length)return;for(const file of files){try{let text='';if(file.name.endsWith('.docx')){const raw=new TextDecoder('utf-8',{fatal:false}).decode(await file.arrayBuffer());const parts=[];const re=/<w:t[^>]*>([^<]*)<\/w:t>/g;let m;while((m=re.exec(raw))!==null)parts.push(m[1]);text=parts.length?parts.join(''):raw.replace(/<[^>]+>/g,'').trim();}else{text=await file.text();}if(text.trim())await dbAddPastColumn(state.currentUser.id,file.name.replace(/\.[^/.]+$/,''),text.trim());}catch(e){console.error(e);}}state.pastColumns=await dbLoadPastColumns(state.currentUser.id);input.value='';renderView();};
+function renderPast(el){const past=state.pastColumns;el.innerHTML=`<h2 class="view-title">過去コラム管理</h2><p class="view-desc">過去のコラムをアップロードすると、AIがあなたの文体を学習します</p><div class="upload-area"><input type="file" id="fi" accept=".txt,.md,.docx" multiple style="display:none" onchange="handleFU(this)"><button class="upload-btn" onclick="openFileDialog()">${icons.upload} ファイルをアップロード</button><span class="upload-hint">.txt .md .docx</span><span class="upload-divider">or</span><button class="manual-btn" onclick="showManual=!showManual;renderView()">テキストで直接入力</button></div>${showManual?`<div class="manual-area"><input class="title-input" id="mt" placeholder="コラムタイトル"><textarea class="edit-textarea" id="mc" placeholder="過去のコラム本文を貼り付けてください" rows="10"></textarea><div style="display:flex;gap:8px;margin-top:12px"><button class="save-draft-btn" onclick="addManual()">追加</button><button class="cancel-btn" onclick="showManual=false;renderView()">キャンセル</button></div></div>`:''}<div style="margin-top:24px"><h3 class="section-title">アップロード済み（${past.length}件）</h3>${past.length===0?`<div class="empty-state"><p>まだ過去コラムがありません</p></div>`:`<div class="past-list">${past.map(c=>`<div class="past-card"><div class="past-card-info"><div class="past-card-title">${esc(c.title)}</div><p class="past-card-excerpt">${esc(c.content.slice(0,100))}...</p><span class="past-card-meta">${c.char_count}字 ・ ${fmt(c.uploaded_at)}</span></div><button class="delete-btn" onclick="delPast('${c.id}')">${icons.trash}</button></div>`).join('')}</div>`}</div>`;}
+window.openFileDialog=function(){const fi=document.getElementById('fi');if(fi)fi.click();};
+window.handleFU=async function(input){
+  const files=input.files;if(!files?.length)return;
+  let ok=0,fail=0;
+  for(const file of files){
+    try{
+      let text='';
+      if(file.name.endsWith('.docx')){
+        const buf=await file.arrayBuffer();
+        try{
+          const zip=await JSZip.loadAsync(buf);
+          const docXml=await zip.file('word/document.xml')?.async('string');
+          if(docXml){const parts=[];const re=/<w:t[^>]*>([^<]*)<\/w:t>/g;let m;while((m=re.exec(docXml))!==null)parts.push(m[1]);text=parts.join('');}
+        }catch(ze){
+          const raw=new TextDecoder('utf-8',{fatal:false}).decode(buf);
+          const parts=[];const re=/<w:t[^>]*>([^<]*)<\/w:t>/g;let m;while((m=re.exec(raw))!==null)parts.push(m[1]);
+          text=parts.length?parts.join(''):raw.replace(/<[^>]+>/g,'').trim();
+        }
+      }else{text=await file.text();}
+      if(text.trim()){await dbAddPastColumn(state.currentUser.id,file.name.replace(/\.[^/.]+$/,''),text.trim());ok++;}
+      else{fail++;alert(file.name+' からテキストを抽出できませんでした。.txt形式で再度お試しください。');}
+    }catch(e){fail++;console.error(e);alert(file.name+' のアップロードに失敗しました: '+e.message);}
+  }
+  state.pastColumns=await dbLoadPastColumns(state.currentUser.id);input.value='';renderView();
+};
 window.addManual=async function(){const t=($('#mt')?.value||'').trim(),c=($('#mc')?.value||'').trim();if(!c)return;await dbAddPastColumn(state.currentUser.id,t||'無題',c);state.pastColumns=await dbLoadPastColumns(state.currentUser.id);showManual=false;renderView();};
 window.delPast=async function(id){await dbDeletePastColumn(id);state.pastColumns=state.pastColumns.filter(c=>c.id!==id);renderView();};
 

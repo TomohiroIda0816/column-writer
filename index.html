@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8/build/index.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans JP','Hiragino Sans',sans-serif;background:#faf8f5;color:#3d3225;min-height:100vh}
@@ -239,7 +240,9 @@ edit:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="curren
 refresh:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
 copy:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
 logout:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
-globe:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`};
+globe:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+download:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+profile:`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><line x1="12" y1="11" x2="12" y2="14"/></svg>`};
 
 let db=null,apiKey='';
 let state={currentUser:null,view:'write',viewingColumn:null,editMode:false,users:[],pastColumns:[],columns:[],customRules:[]};
@@ -372,7 +375,7 @@ async function renderLogin(){
   const users=state.users;
   $('#app').innerHTML=`<div class="login-container"><div class="login-card">
     <div class="login-header"><div class="logo-mark">筆</div><h1 class="login-title">Column Writer</h1><p class="login-subtitle">AIコラム執筆アシスタント</p></div>
-    ${users.length?`<div id="user-list"><p class="login-label">アカウントを選択</p>${users.map(u=>`<button class="user-btn" onclick="loginAs('${u.id}')">${icons.user}<span>${esc(u.name)}</span></button>`).join('')}<button class="new-account-btn" onclick="$('#user-list').style.display='none';$('#create-form').style.display='';$('#login-name').focus()">＋ 新しいアカウントを作成</button></div>`:''}
+    ${users.length?`<div id="user-list"><p class="login-label">アカウントを選択</p>${users.map(u=>`<button class="user-btn" onclick="loginAs('${u.id}')">${icons.user}<span>${esc(u.name)}${u.title?` <span style="color:#8a8070;font-size:12px">${esc(u.title)}</span>`:''}</span></button>`).join('')}<button class="new-account-btn" onclick="$('#user-list').style.display='none';$('#create-form').style.display='';$('#login-name').focus()">＋ 新しいアカウントを作成</button></div>`:''}
     <div id="create-form" style="${users.length?'display:none':''}"><p class="login-label">${users.length?'新しいアカウント':'名前を入力してください'}</p><div style="display:flex;flex-direction:column;gap:8px"><div class="login-row"><input class="login-input" id="login-name" placeholder="例：田中太郎" onkeydown="if(event.key==='Enter')document.getElementById('login-title-input').focus()"></div><div class="login-row"><input class="login-input" id="login-title-input" placeholder="肩書き（例：アナリスト）" onkeydown="if(event.key==='Enter')doCreateUser()"><button class="login-submit" onclick="doCreateUser()">開始</button></div></div><p style="font-size:11px;color:#b0a898;margin-top:6px">肩書きはHP署名（MAVIS PARTNERS ○○ 氏名）に使用されます</p>${users.length?`<button class="back-btn-small" onclick="$('#user-list').style.display='';$('#create-form').style.display='none'">← 戻る</button>`:''}<div id="login-error"></div></div>
     <div class="login-footer"><button class="admin-link" onclick="loginMode='admin';render()">⚙ 管理者設定</button></div>
   </div></div>`;
@@ -427,13 +430,13 @@ window.doChangePw=async function(){
 // ─── App Shell ───
 function renderApp(){
   const dc=state.columns.filter(c=>c.status==='draft').length;
-  const nav=[{id:'write',icon:icons.pen,label:'コラム執筆'},{id:'archive',icon:icons.archive,label:'作成済みコラム',badge:dc||''},{id:'past',icon:icons.file,label:'過去コラム管理'},{id:'rules',icon:icons.settings,label:'執筆ルール'}];
+  const nav=[{id:'write',icon:icons.pen,label:'コラム執筆'},{id:'archive',icon:icons.archive,label:'作成済みコラム',badge:dc||''},{id:'past',icon:icons.file,label:'過去コラム管理'},{id:'rules',icon:icons.settings,label:'執筆ルール'},{id:'profile',icon:icons.profile,label:'設定'}];
   $('#app').innerHTML=`<div class="app-container"><nav class="sidebar"><div><div class="sidebar-logo"><div class="logo-mark-sm">筆</div><span class="sidebar-title">Column Writer</span></div><div class="nav-section">${nav.map(n=>`<button class="nav-item ${state.view===n.id?'active':''}" onclick="switchView('${n.id}')">${n.icon}<span>${n.label}</span>${n.badge?`<span class="nav-badge">${n.badge}</span>`:''}</button>`).join('')}</div></div><div class="sidebar-footer"><div class="user-info">${icons.user}<span class="user-info-name">${esc(state.currentUser.name)}</span></div><button class="logout-btn" onclick="doLogout()" title="ログアウト">${icons.logout}</button></div></nav><main class="main-content"><div id="vc" class="view-container"></div></main></div>`;
   renderView();
 }
 window.switchView=function(v){state.view=v;state.viewingColumn=null;state.editMode=false;renderApp();};
 window.doLogout=function(){state.currentUser=null;localStorage.removeItem('cw-uid');state.view='write';render();};
-function renderView(){const el=$('#vc');if(!el)return;switch(state.view){case'write':renderWrite(el);break;case'archive':state.viewingColumn?renderDetail(el):renderArchive(el);break;case'past':renderPast(el);break;case'rules':renderRules(el);break;}}
+function renderView(){const el=$('#vc');if(!el)return;switch(state.view){case'write':renderWrite(el);break;case'archive':state.viewingColumn?renderDetail(el):renderArchive(el);break;case'past':renderPast(el);break;case'rules':renderRules(el);break;case'profile':renderProfile(el);break;}}
 
 // ─── Write ───
 function renderWrite(el){
@@ -469,6 +472,7 @@ function renderDetail(el){
     <div class="result-header" style="margin-top:16px">
       <div><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div>
       <div class="header-actions">
+        <button class="sm-btn" onclick="doDownloadDocx()" id="dldocx" title="Wordファイルでダウンロード">${icons.download} .docx</button>
         <button class="sm-btn" onclick="copyWpHtml()" id="cpwp" title="WordPress用HTMLをコピー">${icons.globe} HP用コピー</button>
         <button class="icon-btn" onclick="copyCol()" id="cpc" title="テキストコピー">${icons.copy}</button>
         <button class="sm-btn ${state.editMode?'active':''}" onclick="togDetEdit()">${icons.edit} ${state.editMode?'プレビュー':'編集'}</button>
@@ -502,6 +506,13 @@ window.copyWpHtml=function(){
     const b=$('#cpwp');if(b){b.innerHTML=icons.check+' コピー完了';setTimeout(()=>{b.innerHTML=icons.globe+' HP用コピー';},2500);}
     const toast=$('#copy-toast');if(toast){toast.style.display='block';toast.textContent='✓ WordPress用HTMLをクリップボードにコピーしました。WordPressの「テキスト」エディタに貼り付けてください。';setTimeout(()=>{toast.style.display='none';},4000);}
   });
+};
+window.doDownloadDocx=async function(){
+  const c=state.viewingColumn;if(!c)return;
+  const b=$('#dldocx');if(b)b.innerHTML=icons.download+' 生成中...';
+  try{await downloadDocx(c.title,c.content,getUserSignature());}
+  catch(e){alert('docx生成エラー: '+e.message);}
+  if(b)setTimeout(()=>{b.innerHTML=icons.download+' .docx';},1500);
 };;
 
 // ─── Past ───
@@ -598,6 +609,91 @@ window.delPast=async function(id){await dbDeletePastColumn(id);state.pastColumns
 function renderRules(el){const custom=state.customRules;el.innerHTML=`<h2 class="view-title">執筆ルール</h2><p class="view-desc">コラム生成時にAIが参照するルールです</p><div style="margin-bottom:32px"><h3 class="section-title">基本ルール（固定）</h3>${DEFAULT_RULES.map(r=>`<div class="rule-item"><span class="rule-dot">●</span><span>${esc(r.text)}</span></div>`).join('')}</div><div><h3 class="section-title">カスタムルール</h3>${custom.length===0?`<p style="font-size:13px;color:#aaa;margin-bottom:16px">追加されたカスタムルールはありません</p>`:''}${custom.map(r=>`<div class="rule-item"><span class="rule-dot rule-dot-custom">◆</span><span class="rule-text">${esc(r.text)}</span><button class="delete-btn" onclick="delRule('${r.id}')">${icons.trash}</button></div>`).join('')}<div class="rule-add-row"><input class="rule-input" id="nr" placeholder="例：冒頭で読者に問いかける形で始める" onkeydown="if(event.key==='Enter')addRule()"><button class="add-rule-btn" onclick="addRule()">追加</button></div></div>`;}
 window.addRule=async function(){const v=($('#nr')?.value||'').trim();if(!v)return;await dbAddCustomRule(state.currentUser.id,v);state.customRules=await dbLoadCustomRules(state.currentUser.id);renderView();};
 window.delRule=async function(id){await dbDeleteCustomRule(id);state.customRules=state.customRules.filter(r=>r.id!==id);renderView();};
+
+// ─── Profile / Settings ───
+function renderProfile(el){
+  const u=state.currentUser;
+  el.innerHTML=`
+    <h2 class="view-title">設定</h2><p class="view-desc">プロフィールと署名の設定</p>
+    <div style="background:#fff;border-radius:14px;padding:28px;border:1px solid #e8e4de;max-width:480px">
+      <div style="margin-bottom:20px">
+        <label class="field-label">名前</label>
+        <input class="title-input" id="prof-name" value="${esc(u.name)}" disabled style="background:#f5f0e8;color:#8a8070;cursor:not-allowed">
+      </div>
+      <div style="margin-bottom:20px">
+        <label class="field-label">肩書き</label>
+        <p class="field-hint">HP署名（例：MAVIS PARTNERS アナリスト 田中太郎）の肩書き部分に使用されます</p>
+        <input class="title-input" id="prof-title" value="${esc(u.title||'')}" placeholder="例：アナリスト、マネージャー、プリンシパル">
+      </div>
+      <div style="margin-bottom:20px">
+        <label class="field-label">署名プレビュー</label>
+        <div id="sig-preview" style="padding:12px 16px;background:#faf8f5;border-radius:8px;font-size:14px;color:#5a4832;font-weight:500">${esc(getUserSignature()||'（肩書きを入力すると表示されます）')}</div>
+      </div>
+      <button class="generate-btn" onclick="saveProfile()" style="width:100%;justify-content:center">保存</button>
+      <div id="prof-msg"></div>
+    </div>`;
+  const ti=$('#prof-title');
+  if(ti)ti.addEventListener('input',()=>{
+    const t=ti.value.trim();
+    const preview=`MAVIS PARTNERS ${t} ${u.name}`.trim();
+    const el2=$('#sig-preview');if(el2)el2.textContent=preview;
+  });
+}
+window.saveProfile=async function(){
+  const title=($('#prof-title')?.value||'').trim();
+  try{
+    await dbUpdateUserTitle(state.currentUser.id,title);
+    state.currentUser.title=title;
+    $('#prof-msg').innerHTML='<div class="admin-msg ok" style="margin-top:12px">✓ 保存しました</div>';
+  }catch(e){$('#prof-msg').innerHTML=`<div class="admin-msg err" style="margin-top:12px">${esc(e.message)}</div>`;}
+};
+
+// ─── Docx Download ───
+async function downloadDocx(title,content,signature){
+  const {Document,Packer,Paragraph,TextRun,HeadingLevel,AlignmentType}=window.docx;
+  const children=[];
+
+  // Title
+  children.push(new Paragraph({text:title,heading:HeadingLevel.TITLE,spacing:{after:300}}));
+
+  // Body
+  const lines=content.split('\n');
+  let currentP=[];
+  function flushP(){
+    if(currentP.length>0){
+      children.push(new Paragraph({children:currentP.map(l=>new TextRun({text:l,size:24})),spacing:{after:200,line:480}}));
+      currentP=[];
+    }
+  }
+  for(const line of lines){
+    const hm=line.match(/^##\s+(.+)/);
+    if(hm){
+      flushP();
+      children.push(new Paragraph({text:hm[1].trim(),heading:HeadingLevel.HEADING_2,spacing:{before:400,after:200}}));
+    }else if(line.trim()===''){
+      flushP();
+    }else{
+      currentP.push(line);
+    }
+  }
+  flushP();
+
+  // Signature
+  if(signature){
+    children.push(new Paragraph({children:[new TextRun({text:signature,size:24,bold:true})],spacing:{before:400},alignment:AlignmentType.LEFT}));
+  }
+
+  const doc=new Document({sections:[{children}]});
+  const blob=await Packer.toBlob(doc);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=(title||'コラム')+'.docx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // pdf.js worker
 if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3/build/pdf.worker.min.js';

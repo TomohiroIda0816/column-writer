@@ -152,7 +152,12 @@ button:active{transform:scale(0.98)}
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .status-tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px}
 .status-complete{background:#ecfdf5;color:#065f46}
+.status-posted{background:#eff6ff;color:#1e40af}
 .status-draft{background:#fef9e7;color:#92400e}
+.posted-check{display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280;cursor:pointer;padding:2px 6px;border-radius:6px;background:#f5f0e8}
+.posted-check:hover{background:#ebe5d8}
+.posted-check.checked{color:#1e40af;background:#eff6ff}
+.posted-check svg{width:14px;height:14px}
 .card-title{font-size:15px;font-weight:700;color:#2d2518;margin-bottom:6px;font-family:'Noto Serif JP',serif;line-height:1.4}
 .card-excerpt{font-size:12px;color:#8a8070;line-height:1.6;margin-bottom:10px}
 .card-footer{display:flex;justify-content:space-between;align-items:center}
@@ -529,7 +534,10 @@ window.resetWrite=function(){writeState={prompt:'',result:null,editMode:false,ed
 window.doSaveCol=async function(s){try{await dbAddColumn(state.currentUser.id,{title:writeState.editTitle,content:writeState.editContent,charCount:cc(writeState.editContent),status:s,originalPrompt:writeState.prompt});state.columns=await dbLoadColumns(state.currentUser.id);writeState={prompt:'',result:null,editMode:false,editTitle:'',editContent:'',feedback:'',generating:false,revising:false,error:''};state.view='archive';renderApp();}catch(e){writeState.error=e.message;renderView();}};
 
 // ─── Archive ───
-function renderArchive(el){const cols=state.columns,filtered=archiveFilter==='all'?cols:cols.filter(c=>c.status===archiveFilter);el.innerHTML=`<h2 class="view-title">作成済みコラム</h2><div class="filter-bar">${['all','complete','draft'].map(f=>{const l=f==='all'?'すべて':f==='complete'?'完成':'下書き';const n=f==='all'?cols.length:cols.filter(c=>c.status===f).length;return`<button class="filter-btn ${archiveFilter===f?'active':''}" onclick="archiveFilter='${f}';renderView()">${l}<span class="filter-count">${n}</span></button>`;}).join('')}</div>${filtered.length===0?`<div class="empty-state"><p>まだコラムがありません</p><p class="empty-hint">「コラム執筆」から作成してください</p></div>`:`<div class="column-grid">${filtered.map(c=>`<div class="column-card" onclick="viewCol('${c.id}')"><div class="card-header"><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span style="font-size:12px;color:#999">${fmt(c.updated_at)}</span></div><div class="card-title">${esc(c.title)}</div><p class="card-excerpt">${esc(c.content.slice(0,120))}...</p><div class="card-footer"><span class="card-chars">${c.char_count}字</span><button class="delete-btn" onclick="event.stopPropagation();delCol('${c.id}')">${icons.trash}</button></div></div>`).join('')}</div>`}`;}
+function statusLabel(s){return s==='posted'?'投稿済み':s==='complete'?'完成':'下書き';}
+function statusClass(s){return s==='posted'?'status-posted':s==='complete'?'status-complete':'status-draft';}
+function renderArchive(el){const cols=state.columns,filtered=archiveFilter==='all'?cols:cols.filter(c=>c.status===archiveFilter);el.innerHTML=`<h2 class="view-title">作成済みコラム</h2><div class="filter-bar">${['all','complete','posted','draft'].map(f=>{const l=f==='all'?'すべて':f==='posted'?'投稿済み':f==='complete'?'完成':'下書き';const n=f==='all'?cols.length:cols.filter(c=>c.status===f).length;return`<button class="filter-btn ${archiveFilter===f?'active':''}" onclick="archiveFilter='${f}';renderView()">${l}<span class="filter-count">${n}</span></button>`;}).join('')}</div>${filtered.length===0?`<div class="empty-state"><p>まだコラムがありません</p><p class="empty-hint">「コラム執筆」から作成してください</p></div>`:`<div class="column-grid">${filtered.map(c=>{const isPosted=c.status==='posted';const showCheck=c.status==='complete'||c.status==='posted';return`<div class="column-card" onclick="viewCol('${c.id}')"><div class="card-header"><span class="status-tag ${statusClass(c.status)}">${statusLabel(c.status)}</span><span style="font-size:12px;color:#999">${fmt(c.updated_at)}</span></div><div class="card-title">${esc(c.title)}</div><p class="card-excerpt">${esc(c.content.slice(0,120))}...</p><div class="card-footer"><span class="card-chars">${c.char_count}字</span><div style="display:flex;align-items:center;gap:6px">${showCheck?`<button class="posted-check ${isPosted?'checked':''}" onclick="event.stopPropagation();togPosted('${c.id}',${!isPosted})" title="${isPosted?'投稿済みを解除':'投稿済みにする'}"><svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${isPosted?'<path d="M6 10l3 3 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':''}</svg>投稿済み</button>`:''}<button class="delete-btn" onclick="event.stopPropagation();delCol('${c.id}')">${icons.trash}</button></div></div></div>`;}).join('')}</div>`}`;}
+window.togPosted=async function(id,posted){await dbUpdateColumn(id,{status:posted?'posted':'complete'});state.columns=await dbLoadColumns(state.currentUser.id);if(state.viewingColumn?.id===id)state.viewingColumn=state.columns.find(c=>c.id===id);renderView();};
 window.viewCol=function(id){state.viewingColumn=state.columns.find(c=>c.id===id);state.editMode=false;renderView();};
 window.delCol=async function(id){await dbDeleteColumn(id);state.columns=state.columns.filter(c=>c.id!==id);if(state.viewingColumn?.id===id)state.viewingColumn=null;renderView();};
 
@@ -542,13 +550,14 @@ function renderDetail(el){
   el.innerHTML=`
     <button class="back-link" onclick="state.viewingColumn=null;state.editMode=false;renderView()">${icons.chevLeft} 一覧に戻る</button>
     <div class="result-header" style="margin-top:16px">
-      <div><span class="status-tag ${c.status==='complete'?'status-complete':'status-draft'}">${c.status==='complete'?'完成':'下書き'}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div>
+      <div><span class="status-tag ${statusClass(c.status)}">${statusLabel(c.status)}</span><span class="char-badge" style="margin-left:8px">${c.char_count}字</span><span style="font-size:12px;color:#999;margin-left:8px">${fmt(c.updated_at)}</span></div>
       <div class="header-actions">
         <button class="sm-btn" onclick="doDownloadDocx()" id="dldocx" title="Wordファイルでダウンロード">${icons.download} .docx</button>
         <button class="sm-btn" onclick="copyWpHtml()" id="cpwp" title="WordPress用HTMLをコピー">${icons.globe} HP用コピー</button>
         <button class="icon-btn" onclick="copyCol()" id="cpc" title="テキストコピー">${icons.copy}</button>
         <button class="sm-btn ${state.editMode?'active':''}" onclick="togDetEdit()">${icons.edit} ${state.editMode?'プレビュー':'編集'}</button>
         ${c.status==='draft'?`<button class="complete-sm-btn" onclick="complCol('${c.id}')">${icons.check} 完成にする</button>`:''}
+        ${c.status==='complete'||c.status==='posted'?`<button class="posted-check ${c.status==='posted'?'checked':''}" onclick="togPosted('${c.id}',${c.status!=='posted'})" style="font-size:12px"><svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><rect x="2" y="2" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${c.status==='posted'?'<path d="M6 10l3 3 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':''}</svg>投稿済み</button>`:''}
       </div>
     </div>
     ${state.editMode?`
@@ -752,12 +761,18 @@ async function downloadDocx(title,content,signature){
   const children=[];
   const emptyP=()=>new Paragraph({children:[new TextRun({text:'',font:{name:font},size:sz})]});
 
+  // Clean content: strip TITLE line and --- separator if present
+  let cleaned=content.replace(/^TITLE:\s*.+\n/,'').replace(/^-{2,}\n?/,'').trim();
+  // Also skip first line if it exactly matches the title
+  const clines=cleaned.split('\n');
+  if(clines[0]&&clines[0].trim()===title.trim())cleaned=clines.slice(1).join('\n').trim();
+
   // Title
   children.push(new Paragraph({children:[new TextRun({text:title,font:{name:font},size:sz})]}));
   children.push(emptyP());
 
   // Body
-  const lines=content.split('\n');
+  const lines=cleaned.split('\n');
   const blocks=[];
   let cur=null;
   for(const line of lines){

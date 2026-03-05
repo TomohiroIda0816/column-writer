@@ -746,40 +746,55 @@ window.changeUserPw=async function(){
 
 // ─── Docx Download ───
 async function downloadDocx(title,content,signature){
-  const {Document,Packer,Paragraph,TextRun,HeadingLevel,AlignmentType}=window.docx;
+  const {Document,Packer,Paragraph,TextRun,AlignmentType}=window.docx;
+  const font='Meiryo UI';
+  const sz=21; // 10.5pt in half-points
   const children=[];
+  const emptyP=()=>new Paragraph({children:[new TextRun({text:'',font:{name:font},size:sz})]});
 
   // Title
-  children.push(new Paragraph({text:title,heading:HeadingLevel.TITLE,spacing:{after:300}}));
+  children.push(new Paragraph({children:[new TextRun({text:title,font:{name:font},size:sz})]}));
+  children.push(emptyP());
 
   // Body
   const lines=content.split('\n');
-  let currentP=[];
-  function flushP(){
-    if(currentP.length>0){
-      children.push(new Paragraph({children:currentP.map(l=>new TextRun({text:l,size:24})),spacing:{after:200,line:480}}));
-      currentP=[];
-    }
-  }
+  const blocks=[];
+  let cur=null;
   for(const line of lines){
     const hm=line.match(/^##\s+(.+)/);
     if(hm){
-      flushP();
-      children.push(new Paragraph({text:hm[1].trim(),heading:HeadingLevel.HEADING_2,spacing:{before:400,after:200}}));
-    }else if(line.trim()===''){
-      flushP();
-    }else{
-      currentP.push(line);
+      if(cur)blocks.push(cur);
+      cur={heading:hm[1].trim(),paras:[]};
+    }else if(line.trim()!==''){
+      if(!cur)cur={heading:null,paras:[]};
+      cur.paras.push(line);
     }
   }
-  flushP();
+  if(cur)blocks.push(cur);
 
-  // Signature
+  blocks.forEach((block,bi)=>{
+    // Extra empty line before sections (except first)
+    if(bi>0)children.push(emptyP());
+    // Section heading (bold)
+    if(block.heading){
+      children.push(new Paragraph({children:[new TextRun({text:block.heading,font:{name:font},size:sz,bold:true})]}));
+      children.push(emptyP());
+    }
+    // Paragraphs
+    block.paras.forEach((p,pi)=>{
+      children.push(new Paragraph({children:[new TextRun({text:p,font:{name:font},size:sz})]}));
+      if(pi<block.paras.length-1)children.push(emptyP());
+    });
+  });
+
+  // Signature (right-aligned)
   if(signature){
-    children.push(new Paragraph({children:[new TextRun({text:signature,size:24,bold:true})],spacing:{before:400},alignment:AlignmentType.LEFT}));
+    children.push(emptyP());
+    children.push(new Paragraph({children:[new TextRun({text:signature,font:{name:font},size:sz})],alignment:AlignmentType.RIGHT}));
   }
 
-  const doc=new Document({sections:[{children}]});
+  // 457200 EMU = 720 twips = 0.5 inch ≈ 1.27cm margins
+  const doc=new Document({sections:[{properties:{page:{margin:{top:720,right:720,bottom:720,left:720}}},children}]});
   const blob=await Packer.toBlob(doc);
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');

@@ -404,8 +404,12 @@ async function renderLogin(){
   }else{
     body=`
       <div id="user-list">
-        <p class="login-label">アカウントを選択</p>
-        ${users.map(u=>`<button class="user-btn" onclick="selectUser('${u.id}')">${icons.user}<span>${esc(u.name)}${u.title?` <span style="color:#8a8070;font-size:12px">${esc(u.title)}</span>`:''}</span></button>`).join('')}
+        <p class="login-label">名前を入力してログイン</p>
+        <div class="login-row">
+          <input class="login-input" id="login-name-search" placeholder="名前を入力（例：田中太郎）" onkeydown="if(event.key==='Enter')searchAndSelectUser()">
+          <button class="login-submit" onclick="searchAndSelectUser()">次へ</button>
+        </div>
+        <div id="login-error"></div>
         <button class="new-account-btn" onclick="loginStep='create';render()">＋ 新しいアカウントを作成</button>
       </div>`;
   }
@@ -416,9 +420,16 @@ async function renderLogin(){
     <div class="login-footer"><button class="admin-link" onclick="loginMode='admin';render()">⚙ 管理者設定</button></div>
   </div></div>`;
   // Auto-focus password field
-  setTimeout(()=>{const pw=$('#login-pw');if(pw)pw.focus();const nm=$('#login-name');if(nm&&!pw)nm.focus();},50);
+  setTimeout(()=>{const pw=$('#login-pw');if(pw)pw.focus();const ns=$('#login-name-search');if(ns&&!pw)ns.focus();const nm=$('#login-name');if(nm&&!pw&&!ns)nm.focus();},50);
 }
 
+window.searchAndSelectUser=function(){
+  const name=($('#login-name-search')?.value||'').trim();
+  if(!name){$('#login-error').innerHTML='<div class="login-error">名前を入力してください</div>';return;}
+  const u=state.users.find(x=>x.name===name);
+  if(!u){$('#login-error').innerHTML='<div class="login-error">アカウントが見つかりません</div>';return;}
+  loginTarget=u;loginStep='password';render();
+};
 window.selectUser=function(uid){
   const u=state.users.find(x=>x.id===uid);if(!u)return;
   loginTarget=u;loginStep='password';render();

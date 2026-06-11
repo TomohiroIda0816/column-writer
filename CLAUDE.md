@@ -111,7 +111,7 @@ app_settings（管理者設定）
 
 ### 関数: `generateColumnAI(prompt, pastCols, rules, draft, feedback)`
 - Anthropic Messages API を直接呼び出し（`anthropic-dangerous-direct-browser-access` ヘッダー使用）
-- モデル: `claude-sonnet-4-20250514`
+- モデル: `claude-fable-5`（adaptive thinking有効、max_tokens 16000）
 - システムプロンプトで過去コラムの文体模倣を指示
 - 出力フォーマット:
   ```

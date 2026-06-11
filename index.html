@@ -356,7 +356,7 @@ async function generateColumnAI(prompt,pastCols,rules,draft,feedback){
   let msg;
   if(draft&&feedback){msg=`以下のコラム草稿を修正してください。\n\n【修正指示】\n${feedback}\n\n【現在の草稿】\n${draft}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
   else{msg=`以下の内容・メモをもとにコラムを執筆してください。\n\n【書きたい内容・メモ】\n${prompt}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:msg}]})});
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:16000,thinking:{type:'adaptive'},system:sys,messages:[{role:'user',content:msg}]})});
   if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`APIエラー (${resp.status})`);}
   const data=await resp.json();const text=(data.content||[]).map(b=>b.text||'').join('');
   const tm=text.match(/TITLE:\s*(.+)/);const title=tm?tm[1].trim():'無題のコラム';const body=text.replace(/TITLE:\s*.+\n-{2,}\n?/,'').trim();

@@ -279,17 +279,20 @@ async function loadUserData(){if(!state.currentUser)return;const uid=state.curre
 // ─── User title (role) ───
 async function dbUpdateUserTitle(uid,title){await db.from('users').update({title}).eq('id',uid);}
 function getUserSignature(){const u=state.currentUser;if(!u)return'';return `MAVIS PARTNERS ${u.title||''} ${u.name}`.trim();}
+// 署名行（「MAVIS PARTNERS 肩書 氏名」のような行）の判定・除去。本文への署名混入はAIが過去コラムを模倣した結果なので、全出力経路で除去する
+function isSigLine(line){const t=line.trim();return /^MAVIS\s*PARTNERS(\s.*)?$/i.test(t)&&!/[。、．，!！?？]/.test(t)&&t.length<=40;}
+function stripSigLines(text){return (text||'').split('\n').filter(l=>!isSigLine(l)).join('\n').trim();}
 
 // ─── WordPress HTML conversion ───
 function contentToWpHtml(title,content,signature){
-  const lines=content.split('\n');
+  const lines=stripSigLines(content).split('\n');
   let html='';
   let currentParagraph='';
   const headings=[];
 
   function flushParagraph(){
     if(currentParagraph.trim()){
-      html+=`<p>${currentParagraph.trim()}</p>\n`;
+      html+=`<p>${currentParagraph.trim().replace(/\n/g,'<br>')}</p>\n`;
       currentParagraph='';
     }
   }
@@ -319,7 +322,7 @@ function contentToWpHtml(title,content,signature){
 }
 
 function contentToPreviewHtml(title,content,signature){
-  const lines=content.split('\n');
+  const lines=stripSigLines(content).split('\n');
   let html=`<h1 style="font-size:22px;font-weight:700;color:#2d2518;font-family:'Noto Serif JP',serif;margin-bottom:24px;line-height:1.5">${esc(title)}</h1>`;
 
   // Build TOC
@@ -336,7 +339,7 @@ function contentToPreviewHtml(title,content,signature){
 
   // Build body
   let currentP='';
-  function flush(){if(currentP.trim()){html+=`<p style="font-size:14px;line-height:2;color:#3d3225;margin-bottom:16px">${esc(currentP.trim())}</p>`;currentP='';}}
+  function flush(){if(currentP.trim()){html+=`<p style="font-size:14px;line-height:2;color:#3d3225;margin-bottom:16px">${esc(currentP.trim()).replace(/\n/g,'<br>')}</p>`;currentP='';}}
   for(const line of lines){
     const hm=line.match(/^##\s+(.+)/);
     if(hm){flush();html+=`<h2 style="font-size:17px;font-weight:700;color:#2d2518;margin:28px 0 12px;font-family:'Noto Serif JP',serif">${esc(hm[1].trim())}</h2>`;}
@@ -351,15 +354,15 @@ function contentToPreviewHtml(title,content,signature){
 async function generateColumnAI(prompt,pastCols,rules,draft,feedback){
   if(!apiKey)throw new Error('APIキーが設定されていません。管理者に連絡してください。');
   const rulesText=[...DEFAULT_RULES,...rules].map(r=>`・${r.text}`).join('\n');
-  const pastSamples=(pastCols||[]).slice(0,5).map((c,i)=>`【過去コラム${i+1}】\nタイトル: ${c.title}\n${c.content}`).join('\n\n---\n\n');
-  const sys=`あなたは、過去のコラムの文体・論調・思考パターンを完璧に模倣するゴーストライターです。\n以下のルールを厳守してコラムを執筆してください：\n\n【執筆ルール】\n${rulesText}\n\n【重要な制約】\n- 必ず1,500〜3,000字（空白除く）で書くこと\n- セクション数は3〜5つで、各セクションに見出しを付けること\n- 各セクションの文字数をおおよそ均等にすること\n- 過去コラムの文体・口調・表現の癖を徹底的に真似ること\n- そのまま公開できる品質に仕上げること\n- タイトルも付けること\n\n【出力フォーマット】\n以下の形式で出力。セクション見出しは ## で始めること：\nTITLE: （タイトル）\n---\n## セクション見出し1\n（本文段落。段落間は空行1つ。）\n\n## セクション見出し2\n（本文段落）\n\n## セクション見出し3\n（本文段落）`;
+  const pastSamples=(pastCols||[]).slice(0,5).map((c,i)=>`【過去コラム${i+1}】\nタイトル: ${c.title}\n${stripSigLines(c.content)}`).join('\n\n---\n\n');
+  const sys=`あなたは、過去のコラムの文体・論調・思考パターンを完璧に模倣するゴーストライターです。\n以下のルールを厳守してコラムを執筆してください：\n\n【執筆ルール】\n${rulesText}\n\n【重要な制約】\n- 必ず1,500〜3,000字（空白除く）で書くこと\n- セクション数は3〜5つで、各セクションに見出しを付けること\n- 各セクションの文字数をおおよそ均等にすること\n- 過去コラムの文体・口調・表現の癖を徹底的に真似ること\n- そのまま公開できる品質に仕上げること\n- タイトルも付けること\n- 署名（「MAVIS PARTNERS 肩書 氏名」のような行）や氏名は本文に含めないこと（署名はシステムが自動で付与する）\n- 段落の区切りには必ず空行を1行入れること（改行1つだけで段落を区切らない）\n\n【出力フォーマット】\n以下の形式で出力。セクション見出しは ## で始めること：\nTITLE: （タイトル）\n---\n## セクション見出し1\n（本文段落。段落間は空行1つ。）\n\n## セクション見出し2\n（本文段落）\n\n## セクション見出し3\n（本文段落）`;
   let msg;
   if(draft&&feedback){msg=`以下のコラム草稿を修正してください。\n\n【修正指示】\n${feedback}\n\n【現在の草稿】\n${draft}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
   else{msg=`以下の内容・メモをもとにコラムを執筆してください。\n\n【書きたい内容・メモ】\n${prompt}${pastSamples?'\n\n【参考：過去のコラム】\n'+pastSamples:''}`;}
   const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-fable-5',max_tokens:16000,thinking:{type:'adaptive'},system:sys,messages:[{role:'user',content:msg}]})});
   if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`APIエラー (${resp.status})`);}
   const data=await resp.json();const text=(data.content||[]).map(b=>b.text||'').join('');
-  const tm=text.match(/TITLE:\s*(.+)/);const title=tm?tm[1].trim():'無題のコラム';const body=text.replace(/TITLE:\s*.+\n-{2,}\n?/,'').trim();
+  const tm=text.match(/TITLE:\s*(.+)/);const title=tm?tm[1].trim():'無題のコラム';const body=stripSigLines(text.replace(/TITLE:\s*.+\n-{2,}\n?/,'').trim());
   return{title,content:body,charCount:cc(body)};
 }
 
@@ -578,7 +581,7 @@ function renderDetail(el){
 window.togDetEdit=function(){if(!state.editMode){detEdit={title:state.viewingColumn.title,content:state.viewingColumn.content};}state.editMode=!state.editMode;renderView();};
 window.saveDet=async function(id){await dbUpdateColumn(id,{title:detEdit.title,content:detEdit.content,char_count:cc(detEdit.content)});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);state.editMode=false;renderView();};
 window.complCol=async function(id){await dbUpdateColumn(id,{status:'complete'});state.columns=await dbLoadColumns(state.currentUser.id);state.viewingColumn=state.columns.find(c=>c.id===id);renderView();};
-window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+c.content+'\n\n'+getUserSignature());const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
+window.copyCol=function(){const c=state.viewingColumn;navigator.clipboard.writeText(c.title+'\n\n'+stripSigLines(c.content)+'\n\n'+getUserSignature());const b=$('#cpc');if(b){b.innerHTML=icons.check;setTimeout(()=>{b.innerHTML=icons.copy},2000);}};
 window.copyWpHtml=function(){
   const c=state.viewingColumn;
   const sig=getUserSignature();
@@ -761,8 +764,8 @@ async function downloadDocx(title,content,signature){
   const children=[];
   const emptyP=()=>new Paragraph({children:[new TextRun({text:'',font:{name:font},size:sz})]});
 
-  // Clean content: strip TITLE line and --- separator if present
-  let cleaned=content.replace(/^TITLE:\s*.+\n/,'').replace(/^-{2,}\n?/,'').trim();
+  // Clean content: strip TITLE line, --- separator, and stray signature lines if present
+  let cleaned=stripSigLines(content.replace(/^TITLE:\s*.+\n/,'').replace(/^-{2,}\n?/,'').trim());
   // Also skip first line if it exactly matches the title
   const clines=cleaned.split('\n');
   if(clines[0]&&clines[0].trim()===title.trim())cleaned=clines.slice(1).join('\n').trim();
